@@ -1,0 +1,97 @@
+name: Daily Lottery Job
+
+on:
+  schedule:
+    - cron: '30 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  daily-mien-bac:
+    runs-on: ubuntu-latest
+
+    env:
+      PORT: 3000
+      NODE_ENV: production
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      LOTTERY_SOURCE_BASE_URL: ${{ vars.LOTTERY_SOURCE_BASE_URL || 'https://xskt.com.vn' }}
+      XSKT_XSMB_DAILY_URL_TEMPLATE: ${{ vars.XSKT_XSMB_DAILY_URL_TEMPLATE || 'https://xskt.net/xsmb/{dd}-{mm}-{yyyy}' }}
+      LOTTERY_FETCH_TIMEOUT_MS: ${{ vars.LOTTERY_FETCH_TIMEOUT_MS || '25000' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run northern daily lottery job
+        run: npm run job:mien-bac
+
+  daily-mien-trung:
+    runs-on: ubuntu-latest
+
+    env:
+      PORT: 3000
+      NODE_ENV: production
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      LOTTERY_SOURCE_BASE_URL: ${{ vars.LOTTERY_SOURCE_BASE_URL || 'https://xskt.com.vn' }}
+      XSKT_XSMB_DAILY_URL_TEMPLATE: ${{ vars.XSKT_XSMB_DAILY_URL_TEMPLATE || 'https://xskt.net/xsmb/{dd}-{mm}-{yyyy}' }}
+      LOTTERY_FETCH_TIMEOUT_MS: ${{ vars.LOTTERY_FETCH_TIMEOUT_MS || '25000' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run central daily lottery job
+        run: npm run job:mien-trung
+
+  daily-mien-nam:
+    runs-on: ubuntu-latest
+
+    env:
+      PORT: 3000
+      NODE_ENV: production
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      LOTTERY_SOURCE_BASE_URL: ${{ vars.LOTTERY_SOURCE_BASE_URL || 'https://xskt.com.vn' }}
+      XSKT_XSMB_DAILY_URL_TEMPLATE: ${{ vars.XSKT_XSMB_DAILY_URL_TEMPLATE || 'https://xskt.net/xsmb/{dd}-{mm}-{yyyy}' }}
+      LOTTERY_FETCH_TIMEOUT_MS: ${{ vars.LOTTERY_FETCH_TIMEOUT_MS || '25000' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run southern daily lottery job
+        run: npm run job:mien-nam

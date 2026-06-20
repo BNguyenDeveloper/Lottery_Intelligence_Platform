@@ -1,0 +1,42 @@
+{
+  "name": "lotoai",
+  "version": "0.1.0",
+  "description": "Backend platform for collecting, storing, and analyzing Vietnamese lottery results.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "job:daily": "tsx src/cli/job-daily.ts",
+    "job:date": "tsx src/cli/job-date.ts",
+    "job:region": "tsx src/cli/job-region.ts",
+    "job:mien-bac": "tsx src/cli/job-region.ts mien-bac",
+    "job:mien-trung": "tsx src/cli/job-region.ts mien-trung",
+    "job:mien-nam": "tsx src/cli/job-region.ts mien-nam",
+    "job:province": "tsx src/cli/job-province.ts",
+    "import:xsmb:200": "tsx src/cli/import-region-200.ts mien-bac",
+    "import:xsmn:200": "tsx src/cli/import-region-200.ts mien-nam",
+    "import:xsmt:200": "tsx src/cli/import-region-200.ts mien-trung",
+    "stats:last2": "tsx src/cli/stats-last2.ts",
+    "stats:last3": "tsx src/cli/stats-last3.ts"
+  },
+  "keywords": [
+    "lottery",
+    "vietnam",
+    "mongodb",
+    "mongoose"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "mongoose": "^8.9.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
