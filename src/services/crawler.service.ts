@@ -8,6 +8,25 @@ import { LotteryResultInput } from '../interfaces/lottery-result.interface';
 import { toXsktDateParts } from '../utils/date';
 import { parseCompactRegionalPrizeResults, parsePrizeResults, parseRegionalPrizeResults } from '../utils/parser';
 import { assertDateString } from '../utils/date';
+import { logger } from '../utils/logger';
+
+function errorMeta(error: unknown): Record<string, unknown> {
+  if (axios.isAxiosError(error)) {
+    return {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      url: error.config?.url,
+    };
+  }
+
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message };
+  }
+
+  return { error: String(error) };
+}
 
 export class XsktCrawlerService implements LotteryCrawler {
   private readonly client: AxiosInstance;
@@ -35,10 +54,16 @@ export class XsktCrawlerService implements LotteryCrawler {
       return result ? [result] : [];
     }
 
-    const sourceUrl = this.buildRegionUrl(date, region);
-    const response = await this.client.get<string>(sourceUrl);
     const scheduledProvinces = getScheduledProvinces(region, date);
-    const results = parseRegionalPrizeResults(response.data, date, region, sourceUrl);
+    const sourceUrl = this.buildRegionUrl(date, region);
+    let results: LotteryResultInput[] = [];
+
+    try {
+      const response = await this.client.get<string>(sourceUrl);
+      results = parseRegionalPrizeResults(response.data, date, region, sourceUrl);
+    } catch (error) {
+      logger.warn('Primary regional source failed', { date, region, ...errorMeta(error) });
+    }
 
     if (!scheduledProvinces) {
       return results;
@@ -50,9 +75,15 @@ export class XsktCrawlerService implements LotteryCrawler {
     }
 
     const fallbackUrl = this.buildFallbackRegionUrl(date, region);
-    const fallbackResponse = await this.client.get<string>(fallbackUrl);
-    const fallbackResults = parseCompactRegionalPrizeResults(fallbackResponse.data, date, region, fallbackUrl);
-    const fallbackFiltered = fallbackResults.filter((result) => scheduledProvinces.includes(result.province));
+    let fallbackFiltered: LotteryResultInput[] = [];
+
+    try {
+      const fallbackResponse = await this.client.get<string>(fallbackUrl);
+      const fallbackResults = parseCompactRegionalPrizeResults(fallbackResponse.data, date, region, fallbackUrl);
+      fallbackFiltered = fallbackResults.filter((result) => scheduledProvinces.includes(result.province));
+    } catch (error) {
+      logger.warn('Fallback regional source failed', { date, region, ...errorMeta(error) });
+    }
 
     return fallbackFiltered.length >= filtered.length ? fallbackFiltered : filtered;
   }

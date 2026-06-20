@@ -14,6 +14,11 @@ async function main(): Promise<void> {
 
   await connectDatabase();
   const results = await new XsktCrawlerService().fetchByRegion(date, region);
+  if (results.length === 0) {
+    logger.warn('No regional results found', { date, region });
+    return;
+  }
+
   const summary = await new LotteryResultService().saveMany(results);
   logger.info('Region job completed', { date, region, fetchedRecords: results.length, ...summary });
 }
