@@ -2,7 +2,7 @@ name: Daily Mien Bac Prediction
 
 on:
   schedule:
-    - cron: '45 12 * * *'
+    - cron: '45 10 * * *'
   workflow_dispatch:
 
 jobs:
