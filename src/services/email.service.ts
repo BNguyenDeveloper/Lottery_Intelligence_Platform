@@ -6,8 +6,23 @@ export interface EmailMessage {
   html?: string;
 }
 
+export interface EmailConfigStatus {
+  configured: boolean;
+  missing: string[];
+}
+
+const REQUIRED_EMAIL_ENV_KEYS = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_TO'] as const;
+
+export function getEmailConfigStatus(): EmailConfigStatus {
+  const missing = REQUIRED_EMAIL_ENV_KEYS.filter((key) => !process.env[key]);
+  return {
+    configured: missing.length === 0,
+    missing,
+  };
+}
+
 export function isEmailConfigured(): boolean {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.EMAIL_TO);
+  return getEmailConfigStatus().configured;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<void> {

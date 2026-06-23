@@ -1,5 +1,5 @@
 import { connectDatabase, disconnectDatabase } from '../config/database';
-import { isEmailConfigured, sendEmail } from '../services/email.service';
+import { getEmailConfigStatus, sendEmail } from '../services/email.service';
 import { PredictionTarget, predictMienBacNumbers } from '../services/mien-bac-prediction.service';
 import { logger } from '../utils/logger';
 
@@ -45,8 +45,9 @@ async function main(): Promise<void> {
     bestScore: rows[0].score,
   });
 
-  if (!isEmailConfigured()) {
-    logger.info('Email is not configured. Skipping Mien Bac prediction email.');
+  const emailStatus = getEmailConfigStatus();
+  if (!emailStatus.configured) {
+    logger.warn('Email is not configured. Skipping Mien Bac prediction email.', { missing: emailStatus.missing });
     return;
   }
 

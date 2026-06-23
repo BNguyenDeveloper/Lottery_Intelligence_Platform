@@ -42,5 +42,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check email configuration
+        run: |
+          [ -n "$SMTP_HOST" ] && echo "SMTP_HOST configured: yes" || echo "SMTP_HOST configured: no"
+          [ -n "$SMTP_PORT" ] && echo "SMTP_PORT configured: yes" || echo "SMTP_PORT configured: no"
+          [ -n "$SMTP_USER" ] && echo "SMTP_USER configured: yes" || echo "SMTP_USER configured: no"
+          [ -n "$SMTP_PASS" ] && echo "SMTP_PASS configured: yes" || echo "SMTP_PASS configured: no"
+          [ -n "$EMAIL_FROM" ] && echo "EMAIL_FROM configured: yes" || echo "EMAIL_FROM configured: no"
+          [ -n "$EMAIL_TO" ] && echo "EMAIL_TO configured: yes" || echo "EMAIL_TO configured: no"
+
       - name: Run Mien Bac prediction
         run: npm run job:prediction:mien-bac
