@@ -2,7 +2,7 @@ name: Daily Lottery Job
 
 on:
   schedule:
-    - cron: '30 12 * * *'
+    - cron: '0 12 * * *' # 19:00 Vietnam time
   workflow_dispatch:
 
 jobs:
