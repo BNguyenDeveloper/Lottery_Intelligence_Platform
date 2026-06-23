@@ -74,6 +74,13 @@ function buildPredictionEmailText(
       `count=${row.count}`,
       `lastSeen=${row.lastSeenDate}`,
       `gapDays=${row.gapDays}`,
+      `frequency=${row.frequencyScore}`,
+      `recent=${row.recentScore}`,
+      `trend=${row.trendScore}`,
+      `recency=${row.recencyScore}`,
+      `gap=${row.gapScore}`,
+      `weekday=${row.weekdayScore}`,
+      `markov=${row.markovScore}`,
     ].join(' | '),
   );
 
@@ -95,6 +102,13 @@ function buildPredictionEmailHtml(
         <td>${escapeHtml(String(row.count))}</td>
         <td>${escapeHtml(row.lastSeenDate)}</td>
         <td>${escapeHtml(String(row.gapDays))}</td>
+        <td>${escapeHtml(row.frequencyScore)}</td>
+        <td>${escapeHtml(row.recentScore)}</td>
+        <td>${escapeHtml(row.trendScore)}</td>
+        <td>${escapeHtml(row.recencyScore)}</td>
+        <td>${escapeHtml(row.gapScore)}</td>
+        <td>${escapeHtml(row.weekdayScore)}</td>
+        <td>${escapeHtml(row.markovScore)}</td>
       </tr>`,
     )
     .join('');
@@ -113,6 +127,13 @@ function buildPredictionEmailHtml(
           <th>Count</th>
           <th>Last Seen</th>
           <th>Gap Days</th>
+          <th>Frequency</th>
+          <th>Recent</th>
+          <th>Trend</th>
+          <th>Recency</th>
+          <th>Gap</th>
+          <th>Weekday</th>
+          <th>Markov</th>
         </tr>
       </thead>
       <tbody>${tableRows}</tbody>
