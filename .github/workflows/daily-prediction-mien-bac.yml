@@ -19,12 +19,12 @@ jobs:
       PREDICTION_TARGET: ${{ vars.PREDICTION_TARGET || 'last2' }}
       PREDICTION_HISTORY_DAYS: ${{ vars.PREDICTION_HISTORY_DAYS || '365' }}
       PREDICTION_TOP: ${{ vars.PREDICTION_TOP || '10' }}
-      SMTP_HOST: ${{ secrets.SMTP_HOST }}
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SMTP_USER: ${{ vars.SMTP_USER }}
       SMTP_PASS: ${{ secrets.SMTP_PASS }}
-      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+      EMAIL_TO: ${{ vars.EMAIL_TO }}
 
     steps:
       - name: Checkout
