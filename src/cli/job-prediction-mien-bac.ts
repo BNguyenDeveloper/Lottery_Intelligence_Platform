@@ -6,6 +6,8 @@ import {
   PredictionTarget,
   predictMienBacNumbers,
 } from '../services/mien-bac-prediction.service';
+import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snapshot.service';
+import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
 function option(name: string): string | undefined {
@@ -29,6 +31,8 @@ async function main(): Promise<void> {
   const blendPredictionTop = Number(option('blend-prediction-top') ?? process.env.PREDICTION_BLEND_PREDICTION_TOP ?? 20);
   const blendTrendTop = Number(option('blend-trend-top') ?? process.env.PREDICTION_BLEND_TREND_TOP ?? 20);
   const blendTop = Number(option('blend-top') ?? process.env.PREDICTION_BLEND_TOP ?? top);
+  const predictionDate = getVietnamDateString();
+  const targetDate = option('target-date') ?? process.env.PREDICTION_TARGET_DATE ?? shiftDate(predictionDate, 1);
 
   if (!Number.isInteger(historyDays) || historyDays <= 0) {
     throw new Error('history-days must be a positive integer.');
@@ -83,6 +87,18 @@ async function main(): Promise<void> {
   if (blendRows.length > 0) {
     console.log('Prediction + Trend Blend');
     console.table(blendRows);
+    await saveMienBacLast2PredictionSnapshot({
+      predictionDate,
+      targetDate,
+      rows: blendRows.map((row) => ({
+        rank: row.rank,
+        number: row.number,
+        predictionScore: row.predictionScore,
+        trendScore: row.trendScore,
+        combinedScore: row.combinedScore,
+        source: row.source,
+      })),
+    });
   }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
@@ -92,6 +108,8 @@ async function main(): Promise<void> {
     top,
     bestNumber: rows[0].number,
     bestScore: rows[0].score,
+    predictionDate,
+    targetDate,
     trendRows: trendRows.length,
     blendRows: blendRows.length,
   });
@@ -320,6 +338,12 @@ function escapeHtml(value: string): string {
     };
     return entities[char];
   });
+}
+
+function shiftDate(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
 }
 
 main()

@@ -1,4 +1,5 @@
 import { LotteryNumberMienBacModel } from '../models/LotteryNumber';
+import { getLatestPredictionLearningWeights } from './prediction-learning-weight.service';
 
 export type PredictionTarget = 'last2' | 'last3';
 
@@ -176,6 +177,7 @@ export async function getMienBacLast2PredictionTrendBlend(
   const predictionByNumber = new Map(predictionRows.map((row) => [row.number, row]));
   const trendByNumber = new Map(trendRows.map((row) => [row.number, row]));
   const numbers = new Set([...predictionByNumber.keys(), ...trendByNumber.keys()]);
+  const weights = await getLatestPredictionLearningWeights();
 
   return Array.from(numbers)
     .map((number) => {
@@ -183,8 +185,12 @@ export async function getMienBacLast2PredictionTrendBlend(
       const trend = trendByNumber.get(number);
       const predictionScore = prediction ? Number(prediction.score) : 0;
       const trendScore = trend ? Number(trend.trendScore) : 0;
-      const bothBonus = prediction && trend ? 0.05 : 0;
-      const combinedScore = clamp(predictionScore * 0.65 + trendScore * 0.35 + bothBonus, 0, 1);
+      const bothBonus = prediction && trend ? weights.bothListBonus : 0;
+      const combinedScore = clamp(
+        predictionScore * weights.predictionWeight + trendScore * weights.trendWeight + bothBonus,
+        0,
+        1,
+      );
 
       return {
         number,
