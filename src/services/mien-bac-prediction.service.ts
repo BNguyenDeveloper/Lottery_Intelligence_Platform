@@ -12,6 +12,21 @@ export interface MienBacPredictionBacktestOptions extends MienBacPredictionOptio
   testDays: number;
 }
 
+export interface MienBacLast2TrendOptions {
+  recentDays: number;
+  baselineDays: number;
+  top: number;
+}
+
+export interface MienBacLast2BlendOptions {
+  historyDays: number;
+  predictionTop: number;
+  recentDays: number;
+  baselineDays: number;
+  trendTop: number;
+  top: number;
+}
+
 export interface MienBacPredictionRow {
   rank: number;
   number: string;
@@ -50,6 +65,36 @@ export interface MienBacPredictionBacktestResult {
   numberHitRate: string;
   averageHitsPerDay: string;
   days: MienBacPredictionBacktestDay[];
+}
+
+export interface MienBacLast2TrendRow {
+  rank: number;
+  number: string;
+  recentCount: number;
+  baselineCount: number;
+  recentRate: string;
+  baselineRate: string;
+  trendLift: string;
+  lastSeenDate: string;
+  gapDays: number;
+  trendScore: string;
+}
+
+export interface MienBacLast2BlendRow {
+  rank: number;
+  number: string;
+  combinedScore: string;
+  predictionRank: string;
+  predictionScore: string;
+  predictionCount: string;
+  predictionGapDays: string;
+  trendRank: string;
+  trendScore: string;
+  trendLift: string;
+  trendRecentCount: string;
+  trendBaselineCount: string;
+  trendGapDays: string;
+  source: string;
 }
 
 interface HistoryRow {
@@ -113,6 +158,146 @@ const DEFAULT_WEIGHTS: PredictionWeights = {
   weekdayScore: 0.1,
   markovScore: 0.11,
 };
+
+export async function getMienBacLast2PredictionTrendBlend(
+  options: MienBacLast2BlendOptions,
+): Promise<MienBacLast2BlendRow[]> {
+  const predictionRows = await predictMienBacNumbers({
+    target: 'last2',
+    historyDays: options.historyDays,
+    top: options.predictionTop,
+  });
+  const trendRows = await getTrendingMienBacLast2({
+    recentDays: options.recentDays,
+    baselineDays: options.baselineDays,
+    top: options.trendTop,
+  });
+
+  const predictionByNumber = new Map(predictionRows.map((row) => [row.number, row]));
+  const trendByNumber = new Map(trendRows.map((row) => [row.number, row]));
+  const numbers = new Set([...predictionByNumber.keys(), ...trendByNumber.keys()]);
+
+  return Array.from(numbers)
+    .map((number) => {
+      const prediction = predictionByNumber.get(number);
+      const trend = trendByNumber.get(number);
+      const predictionScore = prediction ? Number(prediction.score) : 0;
+      const trendScore = trend ? Number(trend.trendScore) : 0;
+      const bothBonus = prediction && trend ? 0.05 : 0;
+      const combinedScore = clamp(predictionScore * 0.65 + trendScore * 0.35 + bothBonus, 0, 1);
+
+      return {
+        number,
+        combinedScore,
+        prediction,
+        trend,
+        source: prediction && trend ? 'prediction+trend' : prediction ? 'prediction' : 'trend',
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.combinedScore - left.combinedScore ||
+        Number(right.prediction?.score ?? 0) - Number(left.prediction?.score ?? 0) ||
+        Number(right.trend?.trendScore ?? 0) - Number(left.trend?.trendScore ?? 0) ||
+        left.number.localeCompare(right.number),
+    )
+    .slice(0, options.top)
+    .map((row, index) => ({
+      rank: index + 1,
+      number: row.number,
+      combinedScore: formatScore(row.combinedScore),
+      predictionRank: row.prediction ? String(row.prediction.rank) : '-',
+      predictionScore: row.prediction?.score ?? '-',
+      predictionCount: row.prediction ? String(row.prediction.count) : '-',
+      predictionGapDays: row.prediction ? String(row.prediction.gapDays) : '-',
+      trendRank: row.trend ? String(row.trend.rank) : '-',
+      trendScore: row.trend?.trendScore ?? '-',
+      trendLift: row.trend?.trendLift ?? '-',
+      trendRecentCount: row.trend ? String(row.trend.recentCount) : '-',
+      trendBaselineCount: row.trend ? String(row.trend.baselineCount) : '-',
+      trendGapDays: row.trend ? String(row.trend.gapDays) : '-',
+      source: row.source,
+    }));
+}
+
+export async function getTrendingMienBacLast2(options: MienBacLast2TrendOptions): Promise<MienBacLast2TrendRow[]> {
+  const latest = await LotteryNumberMienBacModel.findOne({ province: 'xsmb' })
+    .sort({ date: -1 })
+    .select({ date: 1 })
+    .lean()
+    .exec();
+
+  if (!latest?.date) {
+    return [];
+  }
+
+  const totalDays = options.recentDays + options.baselineDays;
+  const fromDate = shiftDate(latest.date, -(totalDays - 1));
+  const rows = await LotteryNumberMienBacModel.find({
+    province: 'xsmb',
+    date: { $gte: fromDate, $lte: latest.date },
+  })
+    .select({ date: 1, last2: 1 })
+    .sort({ date: 1 })
+    .lean<HistoryRow[]>()
+    .exec();
+
+  const dailyHits = buildDailyHits(rows, 'last2');
+  if (dailyHits.length === 0) {
+    return [];
+  }
+
+  const recentDays = dailyHits.slice(-options.recentDays);
+  const baselineDays = dailyHits.slice(Math.max(0, dailyHits.length - options.recentDays - options.baselineDays), -options.recentDays);
+  const latestDay = dailyHits[dailyHits.length - 1];
+
+  return buildCandidates('last2')
+    .map((candidate) => {
+      const recentCount = countHits(candidate, recentDays);
+      const baselineCount = countHits(candidate, baselineDays);
+      const recentRate = recentCount / Math.max(recentDays.length, 1);
+      const baselineRate = baselineCount / Math.max(baselineDays.length, 1);
+      const smoothedBaselineRate = (baselineCount + 1) / (Math.max(baselineDays.length, 1) + 100);
+      const trendLift = recentRate / smoothedBaselineRate;
+      const lastSeenDate = findLastSeenDate(candidate, dailyHits);
+      const gapDays = lastSeenDate ? diffDays(latestDay.date, lastSeenDate) : totalDays;
+      const recencyBoost = Math.exp(-gapDays / 14);
+      const trendScore = clamp(normalize(trendLift, 3) * 0.65 + normalize(recentRate, 0.35) * 0.25 + recencyBoost * 0.1, 0, 1);
+
+      return {
+        number: candidate,
+        recentCount,
+        baselineCount,
+        recentRate,
+        baselineRate,
+        trendLift,
+        lastSeenDate: lastSeenDate ?? '-',
+        gapDays,
+        trendScore,
+      };
+    })
+    .filter((row) => row.recentCount >= 2)
+    .sort(
+      (left, right) =>
+        right.trendScore - left.trendScore ||
+        right.trendLift - left.trendLift ||
+        right.recentCount - left.recentCount ||
+        left.number.localeCompare(right.number),
+    )
+    .slice(0, options.top)
+    .map((row, index) => ({
+      rank: index + 1,
+      number: row.number,
+      recentCount: row.recentCount,
+      baselineCount: row.baselineCount,
+      recentRate: formatScore(row.recentRate),
+      baselineRate: formatScore(row.baselineRate),
+      trendLift: formatScore(row.trendLift),
+      lastSeenDate: row.lastSeenDate,
+      gapDays: row.gapDays,
+      trendScore: formatScore(row.trendScore),
+    }));
+}
 
 export async function backtestMienBacPrediction(
   options: MienBacPredictionBacktestOptions,

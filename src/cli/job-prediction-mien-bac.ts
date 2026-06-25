@@ -1,6 +1,11 @@
 import { connectDatabase, disconnectDatabase } from '../config/database';
 import { getEmailConfigStatus, sendEmail } from '../services/email.service';
-import { PredictionTarget, predictMienBacNumbers } from '../services/mien-bac-prediction.service';
+import {
+  getMienBacLast2PredictionTrendBlend,
+  getTrendingMienBacLast2,
+  PredictionTarget,
+  predictMienBacNumbers,
+} from '../services/mien-bac-prediction.service';
 import { logger } from '../utils/logger';
 
 function option(name: string): string | undefined {
@@ -18,6 +23,12 @@ async function main(): Promise<void> {
   const target = parseTarget(option('target') ?? process.env.PREDICTION_TARGET);
   const historyDays = Number(option('history-days') ?? process.env.PREDICTION_HISTORY_DAYS ?? 365);
   const top = Number(option('top') ?? process.env.PREDICTION_TOP ?? 10);
+  const trendRecentDays = Number(option('trend-recent-days') ?? process.env.PREDICTION_TREND_RECENT_DAYS ?? 30);
+  const trendBaselineDays = Number(option('trend-baseline-days') ?? process.env.PREDICTION_TREND_BASELINE_DAYS ?? 90);
+  const trendTop = Number(option('trend-top') ?? process.env.PREDICTION_TREND_TOP ?? 5);
+  const blendPredictionTop = Number(option('blend-prediction-top') ?? process.env.PREDICTION_BLEND_PREDICTION_TOP ?? 20);
+  const blendTrendTop = Number(option('blend-trend-top') ?? process.env.PREDICTION_BLEND_TREND_TOP ?? 20);
+  const blendTop = Number(option('blend-top') ?? process.env.PREDICTION_BLEND_TOP ?? top);
 
   if (!Number.isInteger(historyDays) || historyDays <= 0) {
     throw new Error('history-days must be a positive integer.');
@@ -27,15 +38,53 @@ async function main(): Promise<void> {
     throw new Error('top must be a positive integer.');
   }
 
+  for (const [name, value] of [
+    ['trend-recent-days', trendRecentDays],
+    ['trend-baseline-days', trendBaselineDays],
+    ['trend-top', trendTop],
+    ['blend-prediction-top', blendPredictionTop],
+    ['blend-trend-top', blendTrendTop],
+    ['blend-top', blendTop],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`${name} must be a positive integer.`);
+    }
+  }
+
   await connectDatabase();
   const rows = await predictMienBacNumbers({ target, historyDays, top });
+  const trendRows =
+    target === 'last2'
+      ? await getTrendingMienBacLast2({ recentDays: trendRecentDays, baselineDays: trendBaselineDays, top: trendTop })
+      : [];
+  const blendRows =
+    target === 'last2'
+      ? await getMienBacLast2PredictionTrendBlend({
+          historyDays,
+          predictionTop: blendPredictionTop,
+          recentDays: trendRecentDays,
+          baselineDays: trendBaselineDays,
+          trendTop: blendTrendTop,
+          top: blendTop,
+        })
+      : [];
 
   if (rows.length === 0) {
     logger.warn('No Mien Bac prediction rows found', { target, historyDays, top });
     return;
   }
 
+  console.log('Prediction');
   console.table(rows);
+  if (trendRows.length > 0) {
+    console.log('Last2 Trend');
+    console.table(trendRows);
+  }
+  if (blendRows.length > 0) {
+    console.log('Prediction + Trend Blend');
+    console.table(blendRows);
+  }
+
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
   logger.info('Mien Bac prediction completed', {
     target,
@@ -43,6 +92,8 @@ async function main(): Promise<void> {
     top,
     bestNumber: rows[0].number,
     bestScore: rows[0].score,
+    trendRows: trendRows.length,
+    blendRows: blendRows.length,
   });
 
   const emailStatus = getEmailConfigStatus();
@@ -53,8 +104,8 @@ async function main(): Promise<void> {
 
   await sendEmail({
     subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows),
+    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows),
+    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows),
   });
   logger.info('Mien Bac prediction email sent successfully.');
 }
@@ -64,9 +115,11 @@ function buildPredictionEmailText(
   target: PredictionTarget,
   historyDays: number,
   rows: Awaited<ReturnType<typeof predictMienBacNumbers>>,
+  trendRows: Awaited<ReturnType<typeof getTrendingMienBacLast2>>,
+  blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
 ): string {
   const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
-  const body = rows.map((row) =>
+  const predictionBody = rows.map((row) =>
     [
       `#${row.rank}`,
       `number=${row.number}`,
@@ -83,8 +136,35 @@ function buildPredictionEmailText(
       `markov=${row.markovScore}`,
     ].join(' | '),
   );
+  const trendHeader = trendRows.length > 0 ? ['', 'Last2 Trend', ''] : [];
+  const trendBody = trendRows.map((row) =>
+    [
+      `#${row.rank}`,
+      `number=${row.number}`,
+      `trendScore=${row.trendScore}`,
+      `trendLift=${row.trendLift}`,
+      `recent=${row.recentCount}`,
+      `baseline=${row.baselineCount}`,
+      `lastSeen=${row.lastSeenDate}`,
+      `gapDays=${row.gapDays}`,
+    ].join(' | '),
+  );
+  const blendHeader = blendRows.length > 0 ? ['', 'Prediction + Trend Blend', ''] : [];
+  const blendBody = blendRows.map((row) =>
+    [
+      `#${row.rank}`,
+      `number=${row.number}`,
+      `combined=${row.combinedScore}`,
+      `predictionRank=${row.predictionRank}`,
+      `predictionScore=${row.predictionScore}`,
+      `trendRank=${row.trendRank}`,
+      `trendScore=${row.trendScore}`,
+      `trendLift=${row.trendLift}`,
+      `source=${row.source}`,
+    ].join(' | '),
+  );
 
-  return [...header, ...body].join('\n');
+  return [...header, 'Prediction', '', ...predictionBody, ...trendHeader, ...trendBody, ...blendHeader, ...blendBody].join('\n');
 }
 
 function buildPredictionEmailHtml(
@@ -92,6 +172,8 @@ function buildPredictionEmailHtml(
   target: PredictionTarget,
   historyDays: number,
   rows: Awaited<ReturnType<typeof predictMienBacNumbers>>,
+  trendRows: Awaited<ReturnType<typeof getTrendingMienBacLast2>>,
+  blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
 ): string {
   const tableRows = rows
     .map(
@@ -112,12 +194,95 @@ function buildPredictionEmailHtml(
       </tr>`,
     )
     .join('');
+  const trendTableRows = trendRows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(String(row.rank))}</td>
+        <td><strong>${escapeHtml(row.number)}</strong></td>
+        <td>${escapeHtml(row.trendScore)}</td>
+        <td>${escapeHtml(row.trendLift)}</td>
+        <td>${escapeHtml(String(row.recentCount))}</td>
+        <td>${escapeHtml(String(row.baselineCount))}</td>
+        <td>${escapeHtml(row.recentRate)}</td>
+        <td>${escapeHtml(row.baselineRate)}</td>
+        <td>${escapeHtml(row.lastSeenDate)}</td>
+        <td>${escapeHtml(String(row.gapDays))}</td>
+      </tr>`,
+    )
+    .join('');
+  const blendTableRows = blendRows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(String(row.rank))}</td>
+        <td><strong>${escapeHtml(row.number)}</strong></td>
+        <td>${escapeHtml(row.combinedScore)}</td>
+        <td>${escapeHtml(row.predictionRank)}</td>
+        <td>${escapeHtml(row.predictionScore)}</td>
+        <td>${escapeHtml(row.predictionCount)}</td>
+        <td>${escapeHtml(row.predictionGapDays)}</td>
+        <td>${escapeHtml(row.trendRank)}</td>
+        <td>${escapeHtml(row.trendScore)}</td>
+        <td>${escapeHtml(row.trendLift)}</td>
+        <td>${escapeHtml(row.trendRecentCount)}</td>
+        <td>${escapeHtml(row.trendBaselineCount)}</td>
+        <td>${escapeHtml(row.trendGapDays)}</td>
+        <td>${escapeHtml(row.source)}</td>
+      </tr>`,
+    )
+    .join('');
+  const trendSection =
+    trendRows.length > 0
+      ? `<h3>Last2 Trend</h3>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Number</th>
+          <th>Trend Score</th>
+          <th>Trend Lift</th>
+          <th>Recent Count</th>
+          <th>Baseline Count</th>
+          <th>Recent Rate</th>
+          <th>Baseline Rate</th>
+          <th>Last Seen</th>
+          <th>Gap Days</th>
+        </tr>
+      </thead>
+      <tbody>${trendTableRows}</tbody>
+    </table>`
+      : '';
+  const blendSection =
+    blendRows.length > 0
+      ? `<h3>Prediction + Trend Blend</h3>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Number</th>
+          <th>Combined</th>
+          <th>Prediction Rank</th>
+          <th>Prediction Score</th>
+          <th>Prediction Count</th>
+          <th>Prediction Gap</th>
+          <th>Trend Rank</th>
+          <th>Trend Score</th>
+          <th>Trend Lift</th>
+          <th>Trend Recent</th>
+          <th>Trend Baseline</th>
+          <th>Trend Gap</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>${blendTableRows}</tbody>
+    </table>`
+      : '';
 
   return `<!doctype html>
 <html>
   <body>
     <h2>${escapeHtml(summary)}</h2>
     <p>Target: ${escapeHtml(target)}<br>History days: ${historyDays}</p>
+    <h3>Prediction</h3>
     <table border="1" cellpadding="6" cellspacing="0">
       <thead>
         <tr>
@@ -138,6 +303,8 @@ function buildPredictionEmailHtml(
       </thead>
       <tbody>${tableRows}</tbody>
     </table>
+    ${trendSection}
+    ${blendSection}
   </body>
 </html>`;
 }
