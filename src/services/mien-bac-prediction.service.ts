@@ -1,5 +1,5 @@
 import { LotteryNumberMienBacModel } from '../models/LotteryNumber';
-import { getLatestPredictionLearningWeights } from './prediction-learning-weight.service';
+import { getLatestPredictionLearningWeights, PredictionLearningWeights } from './prediction-learning-weight.service';
 
 export type PredictionTarget = 'last2' | 'last3';
 
@@ -26,6 +26,11 @@ export interface MienBacLast2BlendOptions {
   baselineDays: number;
   trendTop: number;
   top: number;
+}
+
+export interface MienBacLast2BlendWeightBacktestOptions extends MienBacLast2BlendOptions {
+  backtestDays: number;
+  weightGrid: Array<Pick<PredictionLearningWeights, 'predictionWeight' | 'trendWeight' | 'bothListBonus'>>;
 }
 
 export interface MienBacPredictionRow {
@@ -98,6 +103,18 @@ export interface MienBacLast2BlendRow {
   source: string;
 }
 
+export interface MienBacLast2BlendWeightBacktestResult {
+  predictionWeight: number;
+  trendWeight: number;
+  bothListBonus: number;
+  evaluatedDays: number;
+  hitDays: number;
+  hitDayRate: string;
+  totalHits: number;
+  averageHitsPerDay: string;
+  top5HitRate: string;
+}
+
 interface HistoryRow {
   date: string;
   last2?: string;
@@ -123,6 +140,18 @@ interface ScoredCandidate {
   gapScore: number;
   weekdayScore: number;
   markovScore: number;
+}
+
+interface TrendCandidate {
+  number: string;
+  recentCount: number;
+  baselineCount: number;
+  recentRate: number;
+  baselineRate: number;
+  trendLift: number;
+  lastSeenDate: string;
+  gapDays: number;
+  trendScore: number;
 }
 
 type ScoreKey =
@@ -159,6 +188,92 @@ const DEFAULT_WEIGHTS: PredictionWeights = {
   weekdayScore: 0.1,
   markovScore: 0.11,
 };
+
+export async function backtestMienBacLast2BlendWeights(
+  options: MienBacLast2BlendWeightBacktestOptions,
+): Promise<MienBacLast2BlendWeightBacktestResult[]> {
+  const latest = await LotteryNumberMienBacModel.findOne({ province: 'xsmb' })
+    .sort({ date: -1 })
+    .select({ date: 1 })
+    .lean()
+    .exec();
+
+  if (!latest?.date) {
+    return [];
+  }
+
+  const totalDays = options.historyDays + options.baselineDays + options.backtestDays;
+  const fromDate = shiftDate(latest.date, -(totalDays - 1));
+  const rows = await LotteryNumberMienBacModel.find({
+    province: 'xsmb',
+    date: { $gte: fromDate, $lte: latest.date },
+  })
+    .select({ date: 1, last2: 1 })
+    .sort({ date: 1 })
+    .lean<HistoryRow[]>()
+    .exec();
+
+  const dailyHits = buildDailyHits(rows, 'last2');
+  if (dailyHits.length <= 1) {
+    return [];
+  }
+
+  const candidates = buildCandidates('last2');
+  const firstTestIndex = Math.max(1, dailyHits.length - options.backtestDays);
+  const results = options.weightGrid.map((weights) => ({
+    predictionWeight: weights.predictionWeight,
+    trendWeight: weights.trendWeight,
+    bothListBonus: weights.bothListBonus,
+    evaluatedDays: 0,
+    hitDays: 0,
+    totalHits: 0,
+    top5Hits: 0,
+  }));
+
+  for (let dayIndex = firstTestIndex; dayIndex < dailyHits.length; dayIndex += 1) {
+    const actualDay = dailyHits[dayIndex];
+    const trainingDays = dailyHits.slice(Math.max(0, dayIndex - options.historyDays), dayIndex);
+
+    if (trainingDays.length === 0) {
+      continue;
+    }
+
+    const predictionRows = rankCandidates(candidates, trainingDays, options.predictionTop);
+    const trendRows = rankTrendCandidates(candidates, trainingDays, options);
+
+    for (const result of results) {
+      const predicted = rankBlendNumbers(predictionRows, trendRows, result, options.top);
+      const hitCount = predicted.filter((number) => actualDay.values.has(number)).length;
+      result.evaluatedDays += 1;
+      result.totalHits += hitCount;
+      if (hitCount > 0) {
+        result.hitDays += 1;
+      }
+      if (predicted.slice(0, 5).some((number) => actualDay.values.has(number))) {
+        result.top5Hits += 1;
+      }
+    }
+  }
+
+  return results
+    .map((result) => ({
+      predictionWeight: result.predictionWeight,
+      trendWeight: result.trendWeight,
+      bothListBonus: result.bothListBonus,
+      evaluatedDays: result.evaluatedDays,
+      hitDays: result.hitDays,
+      hitDayRate: formatPercent(result.hitDays / Math.max(result.evaluatedDays, 1)),
+      totalHits: result.totalHits,
+      averageHitsPerDay: (result.totalHits / Math.max(result.evaluatedDays, 1)).toFixed(2),
+      top5HitRate: formatPercent(result.top5Hits / Math.max(result.evaluatedDays, 1)),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.averageHitsPerDay) - Number(left.averageHitsPerDay) ||
+        parsePercent(right.hitDayRate) - parsePercent(left.hitDayRate) ||
+        parsePercent(right.top5HitRate) - parsePercent(left.top5HitRate),
+    );
+}
 
 export async function getMienBacLast2PredictionTrendBlend(
   options: MienBacLast2BlendOptions,
@@ -253,11 +368,28 @@ export async function getTrendingMienBacLast2(options: MienBacLast2TrendOptions)
     return [];
   }
 
+  return rankTrendCandidates(buildCandidates('last2'), dailyHits, options)
+    .map((row, index) => ({
+      rank: index + 1,
+      number: row.number,
+      recentCount: row.recentCount,
+      baselineCount: row.baselineCount,
+      recentRate: formatScore(row.recentRate),
+      baselineRate: formatScore(row.baselineRate),
+      trendLift: formatScore(row.trendLift),
+      lastSeenDate: row.lastSeenDate,
+      gapDays: row.gapDays,
+      trendScore: formatScore(row.trendScore),
+    }));
+}
+
+function rankTrendCandidates(candidates: string[], dailyHits: DailyHits[], options: MienBacLast2TrendOptions): TrendCandidate[] {
+  const totalDays = options.recentDays + options.baselineDays;
   const recentDays = dailyHits.slice(-options.recentDays);
   const baselineDays = dailyHits.slice(Math.max(0, dailyHits.length - options.recentDays - options.baselineDays), -options.recentDays);
   const latestDay = dailyHits[dailyHits.length - 1];
 
-  return buildCandidates('last2')
+  return candidates
     .map((candidate) => {
       const recentCount = countHits(candidate, recentDays);
       const baselineCount = countHits(candidate, baselineDays);
@@ -290,19 +422,46 @@ export async function getTrendingMienBacLast2(options: MienBacLast2TrendOptions)
         right.recentCount - left.recentCount ||
         left.number.localeCompare(right.number),
     )
-    .slice(0, options.top)
-    .map((row, index) => ({
-      rank: index + 1,
-      number: row.number,
-      recentCount: row.recentCount,
-      baselineCount: row.baselineCount,
-      recentRate: formatScore(row.recentRate),
-      baselineRate: formatScore(row.baselineRate),
-      trendLift: formatScore(row.trendLift),
-      lastSeenDate: row.lastSeenDate,
-      gapDays: row.gapDays,
-      trendScore: formatScore(row.trendScore),
-    }));
+    .slice(0, options.top);
+}
+
+function rankBlendNumbers(
+  predictionRows: ScoredCandidate[],
+  trendRows: TrendCandidate[],
+  weights: Pick<PredictionLearningWeights, 'predictionWeight' | 'trendWeight' | 'bothListBonus'>,
+  top: number,
+): string[] {
+  const predictionByNumber = new Map(predictionRows.map((row) => [row.number, row]));
+  const trendByNumber = new Map(trendRows.map((row) => [row.number, row]));
+  const numbers = new Set([...predictionByNumber.keys(), ...trendByNumber.keys()]);
+
+  return Array.from(numbers)
+    .map((number) => {
+      const prediction = predictionByNumber.get(number);
+      const trend = trendByNumber.get(number);
+      const bothBonus = prediction && trend ? weights.bothListBonus : 0;
+      const combinedScore = clamp(
+        (prediction?.score ?? 0) * weights.predictionWeight + (trend?.trendScore ?? 0) * weights.trendWeight + bothBonus,
+        0,
+        1,
+      );
+
+      return {
+        number,
+        combinedScore,
+        predictionScore: prediction?.score ?? 0,
+        trendScore: trend?.trendScore ?? 0,
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.combinedScore - left.combinedScore ||
+        right.predictionScore - left.predictionScore ||
+        right.trendScore - left.trendScore ||
+        left.number.localeCompare(right.number),
+    )
+    .slice(0, top)
+    .map((row) => row.number);
 }
 
 export async function backtestMienBacPrediction(
@@ -673,4 +832,8 @@ function formatScore(value: number): string {
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function parsePercent(value: string): number {
+  return Number(value.replace('%', ''));
 }

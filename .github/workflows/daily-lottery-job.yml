@@ -36,6 +36,9 @@ jobs:
       - name: Run northern daily lottery job
         run: npm run job:mien-bac
 
+      - name: Evaluate Mien Bac prediction after result import
+        run: npm run job:post-result:mien-bac
+
   daily-mien-trung:
     runs-on: ubuntu-latest
 
