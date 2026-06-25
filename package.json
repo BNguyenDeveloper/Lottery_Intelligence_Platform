@@ -14,6 +14,7 @@
     "job:mien-trung": "tsx src/cli/job-region.ts mien-trung",
     "job:mien-nam": "tsx src/cli/job-region.ts mien-nam",
     "job:prediction:mien-bac": "tsx src/cli/job-prediction-mien-bac.ts",
+    "backtest:prediction:mien-bac": "tsx src/cli/backtest-prediction-mien-bac.ts",
     "job:province": "tsx src/cli/job-province.ts",
     "import:xsmb:200": "tsx src/cli/import-region-200.ts mien-bac",
     "import:xsmn:200": "tsx src/cli/import-region-200.ts mien-nam",

@@ -8,6 +8,10 @@ export interface MienBacPredictionOptions {
   top: number;
 }
 
+export interface MienBacPredictionBacktestOptions extends MienBacPredictionOptions {
+  testDays: number;
+}
+
 export interface MienBacPredictionRow {
   rank: number;
   number: string;
@@ -22,6 +26,30 @@ export interface MienBacPredictionRow {
   gapScore: string;
   weekdayScore: string;
   markovScore: string;
+}
+
+export interface MienBacPredictionBacktestDay {
+  date: string;
+  actualCount: number;
+  hitCount: number;
+  hitRate: string;
+  hits: string;
+  predicted: string;
+}
+
+export interface MienBacPredictionBacktestResult {
+  target: PredictionTarget;
+  historyDays: number;
+  testDays: number;
+  top: number;
+  evaluatedDays: number;
+  hitDays: number;
+  hitDayRate: string;
+  totalHits: number;
+  totalActual: number;
+  numberHitRate: string;
+  averageHitsPerDay: string;
+  days: MienBacPredictionBacktestDay[];
 }
 
 interface HistoryRow {
@@ -86,6 +114,80 @@ const DEFAULT_WEIGHTS: PredictionWeights = {
   markovScore: 0.11,
 };
 
+export async function backtestMienBacPrediction(
+  options: MienBacPredictionBacktestOptions,
+): Promise<MienBacPredictionBacktestResult | undefined> {
+  const latest = await LotteryNumberMienBacModel.findOne({ province: 'xsmb' })
+    .sort({ date: -1 })
+    .select({ date: 1 })
+    .lean()
+    .exec();
+
+  if (!latest?.date) {
+    return undefined;
+  }
+
+  const fromDate = shiftDate(latest.date, -(options.historyDays + options.testDays - 1));
+  const rows = await LotteryNumberMienBacModel.find({
+    province: 'xsmb',
+    date: { $gte: fromDate, $lte: latest.date },
+  })
+    .select({ date: 1, [options.target]: 1 })
+    .sort({ date: 1 })
+    .lean<HistoryRow[]>()
+    .exec();
+
+  const dailyHits = buildDailyHits(rows, options.target);
+  if (dailyHits.length <= 1) {
+    return undefined;
+  }
+
+  const candidates = buildCandidates(options.target);
+  const firstTestIndex = Math.max(1, dailyHits.length - options.testDays);
+  const days: MienBacPredictionBacktestDay[] = [];
+
+  for (let dayIndex = firstTestIndex; dayIndex < dailyHits.length; dayIndex += 1) {
+    const actualDay = dailyHits[dayIndex];
+    const trainingDays = dailyHits.slice(Math.max(0, dayIndex - options.historyDays), dayIndex);
+
+    if (trainingDays.length === 0) {
+      continue;
+    }
+
+    const predicted = rankCandidates(candidates, trainingDays, options.top).map((row) => row.number);
+    const hits = predicted.filter((candidate) => actualDay.values.has(candidate));
+
+    days.push({
+      date: actualDay.date,
+      actualCount: actualDay.values.size,
+      hitCount: hits.length,
+      hitRate: formatPercent(hits.length / Math.max(actualDay.values.size, 1)),
+      hits: hits.join(', ') || '-',
+      predicted: predicted.join(', '),
+    });
+  }
+
+  const evaluatedDays = days.length;
+  const hitDays = days.filter((day) => day.hitCount > 0).length;
+  const totalHits = days.reduce((sum, day) => sum + day.hitCount, 0);
+  const totalActual = days.reduce((sum, day) => sum + day.actualCount, 0);
+
+  return {
+    target: options.target,
+    historyDays: options.historyDays,
+    testDays: options.testDays,
+    top: options.top,
+    evaluatedDays,
+    hitDays,
+    hitDayRate: formatPercent(hitDays / Math.max(evaluatedDays, 1)),
+    totalHits,
+    totalActual,
+    numberHitRate: formatPercent(totalHits / Math.max(totalActual, 1)),
+    averageHitsPerDay: (totalHits / Math.max(evaluatedDays, 1)).toFixed(2),
+    days,
+  };
+}
+
 export async function predictMienBacNumbers(options: MienBacPredictionOptions): Promise<MienBacPredictionRow[]> {
   const latest = await LotteryNumberMienBacModel.findOne({ province: 'xsmb' })
     .sort({ date: -1 })
@@ -113,12 +215,9 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
   }
 
   const candidates = buildCandidates(options.target);
-  const weights = calibrateWeights(candidates, dailyHits);
-  const scored = candidates.map((candidate) => scoreCandidate(candidate, dailyHits, weights));
+  const scored = rankCandidates(candidates, dailyHits, options.top);
 
   return scored
-    .sort((left, right) => right.score - left.score || right.count - left.count || left.number.localeCompare(right.number))
-    .slice(0, options.top)
     .map((row, index) => ({
       rank: index + 1,
       number: row.number,
@@ -134,6 +233,14 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
       weekdayScore: formatScore(row.weekdayScore),
       markovScore: formatScore(row.markovScore),
     }));
+}
+
+function rankCandidates(candidates: string[], dailyHits: DailyHits[], top: number): ScoredCandidate[] {
+  const weights = calibrateWeights(candidates, dailyHits);
+  return candidates
+    .map((candidate) => scoreCandidate(candidate, dailyHits, weights))
+    .sort((left, right) => right.score - left.score || right.count - left.count || left.number.localeCompare(right.number))
+    .slice(0, top);
 }
 
 function buildDailyHits(rows: HistoryRow[], target: PredictionTarget): DailyHits[] {
@@ -371,4 +478,8 @@ function clamp(value: number, min: number, max: number): number {
 
 function formatScore(value: number): string {
   return value.toFixed(4);
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
 }
