@@ -18,8 +18,6 @@ jobs:
       LOTTERY_FETCH_TIMEOUT_MS: 25000
       PREDICTION_TARGET: ${{ vars.PREDICTION_TARGET || 'last2' }}
       PREDICTION_HISTORY_DAYS: ${{ vars.PREDICTION_HISTORY_DAYS || '365' }}
-      PREDICTION_TOP: ${{ vars.PREDICTION_TOP || '5' }}
-      PREDICTION_BLEND_TOP: ${{ vars.PREDICTION_BLEND_TOP || '5' }}
       SMTP_HOST: ${{ vars.SMTP_HOST }}
       SMTP_PORT: ${{ vars.SMTP_PORT }}
       SMTP_USER: ${{ vars.SMTP_USER }}
@@ -53,4 +51,4 @@ jobs:
           [ -n "$EMAIL_TO" ] && echo "EMAIL_TO configured: yes" || echo "EMAIL_TO configured: no"
 
       - name: Run Mien Bac prediction
-        run: npm run job:prediction:mien-bac
+        run: npm run job:prediction:mien-bac -- --top 5 --trend-top 5 --blend-top 5
