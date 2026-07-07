@@ -2,6 +2,8 @@ import { connectDatabase, disconnectDatabase } from '../config/database';
 import { updateMienBacLast2LearningWeights } from '../services/prediction-weight-learning.service';
 import { logger } from '../utils/logger';
 
+const DEFAULT_OUTPUT_TOP = 5;
+
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -33,9 +35,9 @@ async function main(): Promise<void> {
     recentDays: parsePositiveInteger('recent-days', Number(process.env.PREDICTION_TREND_RECENT_DAYS ?? 30)),
     baselineDays: parsePositiveInteger('baseline-days', Number(process.env.PREDICTION_TREND_BASELINE_DAYS ?? 90)),
     trendTop: parsePositiveInteger('trend-top', Number(process.env.PREDICTION_BLEND_TREND_TOP ?? 20)),
-    top: parsePositiveInteger('top', Number(process.env.PREDICTION_BLEND_TOP ?? 10)),
+    top: parsePositiveInteger('top', Number(process.env.PREDICTION_BLEND_TOP ?? DEFAULT_OUTPUT_TOP)),
     backtestDays: parsePositiveInteger('backtest-days', Number(process.env.PREDICTION_LEARNING_BACKTEST_DAYS ?? 60)),
-    learningRate: parsePositiveNumber('learning-rate', Number(process.env.PREDICTION_LEARNING_RATE ?? 0.1)),
+    learningRate: parsePositiveNumber('learning-rate', Number(process.env.PREDICTION_LEARNING_RATE ?? 0.25)),
   });
 
   logger.info('Mien Bac prediction learning update completed', { ...result });

@@ -10,6 +10,8 @@ import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snaps
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
+const DEFAULT_OUTPUT_TOP = 5;
+
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -24,7 +26,7 @@ function parseTarget(value: string | undefined): PredictionTarget {
 async function main(): Promise<void> {
   const target = parseTarget(option('target') ?? process.env.PREDICTION_TARGET);
   const historyDays = Number(option('history-days') ?? process.env.PREDICTION_HISTORY_DAYS ?? 365);
-  const top = Number(option('top') ?? process.env.PREDICTION_TOP ?? 10);
+  const top = Number(option('top') ?? process.env.PREDICTION_TOP ?? DEFAULT_OUTPUT_TOP);
   const trendRecentDays = Number(option('trend-recent-days') ?? process.env.PREDICTION_TREND_RECENT_DAYS ?? 30);
   const trendBaselineDays = Number(option('trend-baseline-days') ?? process.env.PREDICTION_TREND_BASELINE_DAYS ?? 90);
   const trendTop = Number(option('trend-top') ?? process.env.PREDICTION_TREND_TOP ?? 5);

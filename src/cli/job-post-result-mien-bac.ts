@@ -4,6 +4,8 @@ import { updateMienBacLast2LearningWeights } from '../services/prediction-weight
 import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
+const DEFAULT_OUTPUT_TOP = 5;
+
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -34,9 +36,9 @@ async function main(): Promise<void> {
   const recentDays = parsePositiveInteger('recent-days', Number(process.env.PREDICTION_TREND_RECENT_DAYS ?? 30));
   const baselineDays = parsePositiveInteger('baseline-days', Number(process.env.PREDICTION_TREND_BASELINE_DAYS ?? 90));
   const trendTop = parsePositiveInteger('trend-top', Number(process.env.PREDICTION_BLEND_TREND_TOP ?? 20));
-  const top = parsePositiveInteger('top', Number(process.env.PREDICTION_BLEND_TOP ?? 10));
+  const top = parsePositiveInteger('top', Number(process.env.PREDICTION_BLEND_TOP ?? DEFAULT_OUTPUT_TOP));
   const backtestDays = parsePositiveInteger('backtest-days', Number(process.env.PREDICTION_LEARNING_BACKTEST_DAYS ?? 60));
-  const learningRate = parsePositiveNumber('learning-rate', Number(process.env.PREDICTION_LEARNING_RATE ?? 0.1));
+  const learningRate = parsePositiveNumber('learning-rate', Number(process.env.PREDICTION_LEARNING_RATE ?? 0.25));
   assertDateString(date);
 
   await connectDatabase();

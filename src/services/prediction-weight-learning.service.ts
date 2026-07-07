@@ -41,6 +41,9 @@ const WEIGHT_GRID = [
   { predictionWeight: 0.6, trendWeight: 0.4 },
   { predictionWeight: 0.55, trendWeight: 0.45 },
   { predictionWeight: 0.5, trendWeight: 0.5 },
+  { predictionWeight: 0.45, trendWeight: 0.55 },
+  { predictionWeight: 0.4, trendWeight: 0.6 },
+  { predictionWeight: 0.35, trendWeight: 0.65 },
 ] as const;
 
 export async function updateMienBacLast2LearningWeights(

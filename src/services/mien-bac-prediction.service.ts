@@ -183,7 +183,7 @@ const DEFAULT_WEIGHTS: PredictionWeights = {
   frequencyScore: 0.22,
   recentScore: 0.2,
   trendScore: 0.13,
-  recencyScore: 0.13,
+  recencyScore: 0.08,
   gapScore: 0.11,
   weekdayScore: 0.1,
   markovScore: 0.11,
@@ -301,11 +301,12 @@ export async function getMienBacLast2PredictionTrendBlend(
       const predictionScore = prediction ? Number(prediction.score) : 0;
       const trendScore = trend ? Number(trend.trendScore) : 0;
       const bothBonus = prediction && trend ? weights.bothListBonus : 0;
-      const combinedScore = clamp(
-        predictionScore * weights.predictionWeight + trendScore * weights.trendWeight + bothBonus,
-        0,
-        1,
-      );
+      const combinedScore =
+        clamp(
+          predictionScore * weights.predictionWeight + trendScore * weights.trendWeight + bothBonus,
+          0,
+          1,
+        ) * calculateRecentRepeatPenalty(getBlendGapDays(prediction, trend));
 
       return {
         number,
@@ -399,8 +400,10 @@ function rankTrendCandidates(candidates: string[], dailyHits: DailyHits[], optio
       const trendLift = recentRate / smoothedBaselineRate;
       const lastSeenDate = findLastSeenDate(candidate, dailyHits);
       const gapDays = lastSeenDate ? diffDays(latestDay.date, lastSeenDate) : totalDays;
-      const recencyBoost = Math.exp(-gapDays / 14);
-      const trendScore = clamp(normalize(trendLift, 3) * 0.65 + normalize(recentRate, 0.35) * 0.25 + recencyBoost * 0.1, 0, 1);
+      const readinessScore = calculateNextDayReadinessScore(gapDays);
+      const trendScore =
+        clamp(normalize(trendLift, 3) * 0.65 + normalize(recentRate, 0.35) * 0.25 + readinessScore * 0.1, 0, 1) *
+        calculateRecentRepeatPenalty(gapDays);
 
       return {
         number: candidate,
@@ -440,11 +443,12 @@ function rankBlendNumbers(
       const prediction = predictionByNumber.get(number);
       const trend = trendByNumber.get(number);
       const bothBonus = prediction && trend ? weights.bothListBonus : 0;
-      const combinedScore = clamp(
-        (prediction?.score ?? 0) * weights.predictionWeight + (trend?.trendScore ?? 0) * weights.trendWeight + bothBonus,
-        0,
-        1,
-      );
+      const combinedScore =
+        clamp(
+          (prediction?.score ?? 0) * weights.predictionWeight + (trend?.trendScore ?? 0) * weights.trendWeight + bothBonus,
+          0,
+          1,
+        ) * calculateRecentRepeatPenalty(getBlendGapDays(prediction, trend));
 
       return {
         number,
@@ -651,7 +655,7 @@ function calculateCandidateSignals(candidate: string, dailyHits: DailyHits[]): O
   const frequencyScore = normalize(count / totalDays, 0.45);
   const recentScore = normalize(recentCount / recentWindow, 0.55);
   const trendScore = clamp((recentCount / recentWindow - olderCount / Math.max(olderDays.length, 1)) / 0.5 + 0.5, 0, 1);
-  const recencyScore = Math.exp(-gapDays / 18);
+  const recencyScore = calculateNextDayReadinessScore(gapDays);
   const gapScore = 1 - Math.exp(-gapDays / 28);
   const weekdayScore = calculateWeekdayScore(candidate, dailyHits, latestDay.date);
   const markovScore = calculateMarkovScore(candidate, dailyHits, latestValues);
@@ -722,11 +726,48 @@ function calibrateWeights(candidates: string[], dailyHits: DailyHits[]): Predict
 }
 
 function calculateWeightedScore(candidate: Omit<ScoredCandidate, 'score'>, weights: PredictionWeights): number {
-  return clamp(
+  const baseScore = clamp(
     SCORE_KEYS.reduce((sum, key) => sum + candidate[key] * weights[key], 0),
     0,
     1,
   );
+
+  return baseScore * calculateRecentRepeatPenalty(candidate.gapDays);
+}
+
+function calculateNextDayReadinessScore(gapDays: number): number {
+  if (gapDays <= 0) {
+    return 0.05;
+  }
+
+  if (gapDays === 1) {
+    return 0.25;
+  }
+
+  const idealGapDays = 8;
+  const spread = 14;
+  return clamp(Math.exp(-((gapDays - idealGapDays) ** 2) / (2 * spread * spread)), 0, 1);
+}
+
+function calculateRecentRepeatPenalty(gapDays: number): number {
+  if (gapDays <= 0) {
+    return 0.72;
+  }
+
+  if (gapDays === 1) {
+    return 0.88;
+  }
+
+  return 1;
+}
+
+function getBlendGapDays(
+  prediction: { gapDays: string | number } | undefined,
+  trend: { gapDays: string | number } | undefined,
+): number {
+  const predictionGapDays = prediction ? Number(prediction.gapDays) : Number.POSITIVE_INFINITY;
+  const trendGapDays = trend ? Number(trend.gapDays) : Number.POSITIVE_INFINITY;
+  return Math.min(predictionGapDays, trendGapDays);
 }
 
 function createScoreMap(value: number): PredictionWeights {

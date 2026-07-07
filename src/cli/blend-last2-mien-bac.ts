@@ -2,6 +2,8 @@ import { connectDatabase, disconnectDatabase } from '../config/database';
 import { getMienBacLast2PredictionTrendBlend } from '../services/mien-bac-prediction.service';
 import { logger } from '../utils/logger';
 
+const DEFAULT_OUTPUT_TOP = 5;
+
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -22,7 +24,7 @@ async function main(): Promise<void> {
   const recentDays = parsePositiveInteger('recent-days', 30);
   const baselineDays = parsePositiveInteger('baseline-days', 90);
   const trendTop = parsePositiveInteger('trend-top', 20);
-  const top = parsePositiveInteger('top', 10);
+  const top = parsePositiveInteger('top', DEFAULT_OUTPUT_TOP);
 
   await connectDatabase();
   const rows = await getMienBacLast2PredictionTrendBlend({
