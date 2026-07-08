@@ -7,10 +7,12 @@ import {
   predictMienBacNumbers,
 } from '../services/mien-bac-prediction.service';
 import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snapshot.service';
+import { getRecentLast2Summary } from '../services/recent-last2-summary.service';
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
 const DEFAULT_OUTPUT_TOP = 5;
+const DEFAULT_RECENT_SUMMARY_DAYS = 7;
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
@@ -33,6 +35,8 @@ async function main(): Promise<void> {
   const blendPredictionTop = Number(option('blend-prediction-top') ?? process.env.PREDICTION_BLEND_PREDICTION_TOP ?? 20);
   const blendTrendTop = Number(option('blend-trend-top') ?? process.env.PREDICTION_BLEND_TREND_TOP ?? 20);
   const blendTop = Number(option('blend-top') ?? process.env.PREDICTION_BLEND_TOP ?? top);
+  const recentSummaryDays = Number(option('recent-summary-days') ?? process.env.PREDICTION_RECENT_SUMMARY_DAYS ?? DEFAULT_RECENT_SUMMARY_DAYS);
+  const recentSummaryTop = Number(option('recent-summary-top') ?? process.env.PREDICTION_RECENT_SUMMARY_TOP ?? DEFAULT_OUTPUT_TOP);
   const predictionDate = getVietnamDateString();
   const targetDate = option('target-date') ?? process.env.PREDICTION_TARGET_DATE ?? shiftDate(predictionDate, 1);
 
@@ -51,6 +55,8 @@ async function main(): Promise<void> {
     ['blend-prediction-top', blendPredictionTop],
     ['blend-trend-top', blendTrendTop],
     ['blend-top', blendTop],
+    ['recent-summary-days', recentSummaryDays],
+    ['recent-summary-top', recentSummaryTop],
   ] as const) {
     if (!Number.isInteger(value) || value <= 0) {
       throw new Error(`${name} must be a positive integer.`);
@@ -74,6 +80,7 @@ async function main(): Promise<void> {
           top: blendTop,
         })
       : [];
+  const recentSummaryRows = await getRecentSummaryRows(recentSummaryDays, recentSummaryTop);
 
   if (rows.length === 0) {
     logger.warn('No Mien Bac prediction rows found', { target, historyDays, top });
@@ -102,6 +109,10 @@ async function main(): Promise<void> {
       })),
     });
   }
+  if (recentSummaryRows.length > 0) {
+    console.log(`Recent Last2 Summary (${recentSummaryDays} days, all regions)`);
+    console.table(recentSummaryRows);
+  }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
   logger.info('Mien Bac prediction completed', {
@@ -114,6 +125,7 @@ async function main(): Promise<void> {
     targetDate,
     trendRows: trendRows.length,
     blendRows: blendRows.length,
+    recentSummaryRows: recentSummaryRows.length,
   });
 
   const emailStatus = getEmailConfigStatus();
@@ -124,10 +136,19 @@ async function main(): Promise<void> {
 
   await sendEmail({
     subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows),
+    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows),
+    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows),
   });
   logger.info('Mien Bac prediction email sent successfully.');
+}
+
+async function getRecentSummaryRows(days: number, top: number): ReturnType<typeof getRecentLast2Summary> {
+  try {
+    return await getRecentLast2Summary({ days, top });
+  } catch (error) {
+    logger.warn('Recent last2 summary skipped', { error: error instanceof Error ? error.message : String(error) });
+    return [];
+  }
 }
 
 function buildPredictionEmailText(
@@ -137,6 +158,7 @@ function buildPredictionEmailText(
   rows: Awaited<ReturnType<typeof predictMienBacNumbers>>,
   trendRows: Awaited<ReturnType<typeof getTrendingMienBacLast2>>,
   blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
+  recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
 ): string {
   const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
   const predictionBody = rows.map((row) =>
@@ -183,8 +205,30 @@ function buildPredictionEmailText(
       `source=${row.source}`,
     ].join(' | '),
   );
+  const recentSummaryHeader = recentSummaryRows.length > 0 ? ['', 'Recent Last2 Summary - All Regions', ''] : [];
+  const recentSummaryBody = recentSummaryRows.map((row) =>
+    [
+      `#${row.rank}`,
+      `number=${row.number}`,
+      `count=${row.count}`,
+      `mienBac=${row.mienBac}`,
+      `mienTrung=${row.mienTrung}`,
+      `mienNam=${row.mienNam}`,
+    ].join(' | '),
+  );
 
-  return [...header, 'Prediction', '', ...predictionBody, ...trendHeader, ...trendBody, ...blendHeader, ...blendBody].join('\n');
+  return [
+    ...header,
+    'Prediction',
+    '',
+    ...predictionBody,
+    ...trendHeader,
+    ...trendBody,
+    ...blendHeader,
+    ...blendBody,
+    ...recentSummaryHeader,
+    ...recentSummaryBody,
+  ].join('\n');
 }
 
 function buildPredictionEmailHtml(
@@ -194,6 +238,7 @@ function buildPredictionEmailHtml(
   rows: Awaited<ReturnType<typeof predictMienBacNumbers>>,
   trendRows: Awaited<ReturnType<typeof getTrendingMienBacLast2>>,
   blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
+  recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
 ): string {
   const tableRows = rows
     .map(
@@ -250,6 +295,18 @@ function buildPredictionEmailHtml(
       </tr>`,
     )
     .join('');
+  const recentSummaryTableRows = recentSummaryRows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(String(row.rank))}</td>
+        <td><strong>${escapeHtml(row.number)}</strong></td>
+        <td>${escapeHtml(String(row.count))}</td>
+        <td>${escapeHtml(String(row.mienBac))}</td>
+        <td>${escapeHtml(String(row.mienTrung))}</td>
+        <td>${escapeHtml(String(row.mienNam))}</td>
+      </tr>`,
+    )
+    .join('');
   const trendSection =
     trendRows.length > 0
       ? `<h3>Last2 Trend</h3>
@@ -296,6 +353,23 @@ function buildPredictionEmailHtml(
       <tbody>${blendTableRows}</tbody>
     </table>`
       : '';
+  const recentSummarySection =
+    recentSummaryRows.length > 0
+      ? `<h3>Recent Last2 Summary - All Regions</h3>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Number</th>
+          <th>Total Count</th>
+          <th>Mien Bac</th>
+          <th>Mien Trung</th>
+          <th>Mien Nam</th>
+        </tr>
+      </thead>
+      <tbody>${recentSummaryTableRows}</tbody>
+    </table>`
+      : '';
 
   return `<!doctype html>
 <html>
@@ -325,6 +399,7 @@ function buildPredictionEmailHtml(
     </table>
     ${trendSection}
     ${blendSection}
+    ${recentSummarySection}
   </body>
 </html>`;
 }
