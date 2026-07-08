@@ -6,6 +6,7 @@ import {
   PredictionTarget,
   predictMienBacNumbers,
 } from '../services/mien-bac-prediction.service';
+import { getMienBacMissingHeadFollowUp } from '../services/mien-bac-missing-head-follow-up.service';
 import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snapshot.service';
 import { getRecentLast2Summary } from '../services/recent-last2-summary.service';
 import { getVietnamDateString } from '../utils/date';
@@ -13,6 +14,7 @@ import { logger } from '../utils/logger';
 
 const DEFAULT_OUTPUT_TOP = 5;
 const DEFAULT_RECENT_SUMMARY_DAYS = 7;
+const DEFAULT_MISSING_HEAD_TOP = 5;
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
@@ -37,6 +39,7 @@ async function main(): Promise<void> {
   const blendTop = Number(option('blend-top') ?? process.env.PREDICTION_BLEND_TOP ?? top);
   const recentSummaryDays = Number(option('recent-summary-days') ?? process.env.PREDICTION_RECENT_SUMMARY_DAYS ?? DEFAULT_RECENT_SUMMARY_DAYS);
   const recentSummaryTop = Number(option('recent-summary-top') ?? process.env.PREDICTION_RECENT_SUMMARY_TOP ?? DEFAULT_OUTPUT_TOP);
+  const missingHeadTop = Number(option('missing-head-top') ?? process.env.PREDICTION_MISSING_HEAD_TOP ?? DEFAULT_MISSING_HEAD_TOP);
   const predictionDate = getVietnamDateString();
   const targetDate = option('target-date') ?? process.env.PREDICTION_TARGET_DATE ?? shiftDate(predictionDate, 1);
 
@@ -57,6 +60,7 @@ async function main(): Promise<void> {
     ['blend-top', blendTop],
     ['recent-summary-days', recentSummaryDays],
     ['recent-summary-top', recentSummaryTop],
+    ['missing-head-top', missingHeadTop],
   ] as const) {
     if (!Number.isInteger(value) || value <= 0) {
       throw new Error(`${name} must be a positive integer.`);
@@ -81,6 +85,7 @@ async function main(): Promise<void> {
         })
       : [];
   const recentSummaryRows = await getRecentSummaryRows(recentSummaryDays, recentSummaryTop);
+  const missingHeadRows = await getMissingHeadRows(missingHeadTop);
 
   if (rows.length === 0) {
     logger.warn('No Mien Bac prediction rows found', { target, historyDays, top });
@@ -113,6 +118,10 @@ async function main(): Promise<void> {
     console.log(`Recent Last2 Summary (${recentSummaryDays} days, all regions)`);
     console.table(recentSummaryRows);
   }
+  if (missingHeadRows.length > 0) {
+    console.log('Mien Bac Missing Head Follow-up');
+    console.table(missingHeadRows);
+  }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
   logger.info('Mien Bac prediction completed', {
@@ -126,6 +135,7 @@ async function main(): Promise<void> {
     trendRows: trendRows.length,
     blendRows: blendRows.length,
     recentSummaryRows: recentSummaryRows.length,
+    missingHeadRows: missingHeadRows.length,
   });
 
   const emailStatus = getEmailConfigStatus();
@@ -136,8 +146,8 @@ async function main(): Promise<void> {
 
   await sendEmail({
     subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows),
+    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows),
+    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows),
   });
   logger.info('Mien Bac prediction email sent successfully.');
 }
@@ -151,6 +161,15 @@ async function getRecentSummaryRows(days: number, top: number): ReturnType<typeo
   }
 }
 
+async function getMissingHeadRows(topPerHead: number): ReturnType<typeof getMienBacMissingHeadFollowUp> {
+  try {
+    return await getMienBacMissingHeadFollowUp({ topPerHead });
+  } catch (error) {
+    logger.warn('Mien Bac missing head follow-up skipped', { error: error instanceof Error ? error.message : String(error) });
+    return [];
+  }
+}
+
 function buildPredictionEmailText(
   summary: string,
   target: PredictionTarget,
@@ -159,6 +178,7 @@ function buildPredictionEmailText(
   trendRows: Awaited<ReturnType<typeof getTrendingMienBacLast2>>,
   blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
   recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
+  missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
 ): string {
   const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
   const predictionBody = rows.map((row) =>
@@ -216,6 +236,18 @@ function buildPredictionEmailText(
       `mienNam=${row.mienNam}`,
     ].join(' | '),
   );
+  const missingHeadHeader = missingHeadRows.length > 0 ? ['', 'Mien Bac Missing Head Follow-up', ''] : [];
+  const missingHeadBody = missingHeadRows.map((row) =>
+    [
+      `head=${row.missingHead}`,
+      `#${row.rank}`,
+      `number=${row.number}`,
+      `count=${row.count}`,
+      `hitDays=${row.hitDays}/${row.eventDays}`,
+      `hitRate=${row.hitRate}`,
+      `latestDate=${row.latestDate}`,
+    ].join(' | '),
+  );
 
   return [
     ...header,
@@ -228,6 +260,8 @@ function buildPredictionEmailText(
     ...blendBody,
     ...recentSummaryHeader,
     ...recentSummaryBody,
+    ...missingHeadHeader,
+    ...missingHeadBody,
   ].join('\n');
 }
 
@@ -239,6 +273,7 @@ function buildPredictionEmailHtml(
   trendRows: Awaited<ReturnType<typeof getTrendingMienBacLast2>>,
   blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
   recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
+  missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
 ): string {
   const tableRows = rows
     .map(
@@ -307,6 +342,20 @@ function buildPredictionEmailHtml(
       </tr>`,
     )
     .join('');
+  const missingHeadTableRows = missingHeadRows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(row.missingHead)}</td>
+        <td>${escapeHtml(String(row.rank))}</td>
+        <td><strong>${escapeHtml(row.number)}</strong></td>
+        <td>${escapeHtml(String(row.count))}</td>
+        <td>${escapeHtml(String(row.hitDays))}</td>
+        <td>${escapeHtml(String(row.eventDays))}</td>
+        <td>${escapeHtml(row.hitRate)}</td>
+        <td>${escapeHtml(row.latestDate)}</td>
+      </tr>`,
+    )
+    .join('');
   const trendSection =
     trendRows.length > 0
       ? `<h3>Last2 Trend</h3>
@@ -370,6 +419,25 @@ function buildPredictionEmailHtml(
       <tbody>${recentSummaryTableRows}</tbody>
     </table>`
       : '';
+  const missingHeadSection =
+    missingHeadRows.length > 0
+      ? `<h3>Mien Bac Missing Head Follow-up</h3>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
+        <tr>
+          <th>Missing Head</th>
+          <th>Rank</th>
+          <th>Number</th>
+          <th>Count</th>
+          <th>Hit Days</th>
+          <th>Event Days</th>
+          <th>Hit Rate</th>
+          <th>Latest Date</th>
+        </tr>
+      </thead>
+      <tbody>${missingHeadTableRows}</tbody>
+    </table>`
+      : '';
 
   return `<!doctype html>
 <html>
@@ -400,6 +468,7 @@ function buildPredictionEmailHtml(
     ${trendSection}
     ${blendSection}
     ${recentSummarySection}
+    ${missingHeadSection}
   </body>
 </html>`;
 }
