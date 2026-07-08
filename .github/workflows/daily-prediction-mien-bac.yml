@@ -2,7 +2,7 @@ name: Daily Mien Bac Prediction
 
 on:
   schedule:
-    - cron: '45 10 * * *'
+    - cron: '50 11 * * *' # 18:50 Vietnam time, after regional result imports
   workflow_dispatch:
 
 jobs:
