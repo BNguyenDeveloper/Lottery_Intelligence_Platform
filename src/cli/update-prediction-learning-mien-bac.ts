@@ -1,4 +1,5 @@
 import { connectDatabase, disconnectDatabase } from '../config/database';
+import { updateMienBacBayesianLearningWeights } from '../services/prediction-bayesian-learning.service';
 import { updateMienBacLast2LearningWeights } from '../services/prediction-weight-learning.service';
 import { logger } from '../utils/logger';
 
@@ -29,17 +30,32 @@ function parsePositiveNumber(name: string, fallback: number): number {
 
 async function main(): Promise<void> {
   await connectDatabase();
+  const historyDays = parsePositiveInteger('history-days', Number(process.env.PREDICTION_HISTORY_DAYS ?? 365));
+  const backtestDays = parsePositiveInteger(
+    'backtest-days',
+    Number(process.env.PREDICTION_LEARNING_BACKTEST_DAYS ?? 60),
+  );
+  const learningRate = parsePositiveNumber('learning-rate', Number(process.env.PREDICTION_LEARNING_RATE ?? 0.25));
+  const top = parsePositiveInteger('top', Number(process.env.PREDICTION_BLEND_TOP ?? DEFAULT_OUTPUT_TOP));
+  const bayesianResult = await updateMienBacBayesianLearningWeights({
+    historyDays,
+    backtestDays,
+    top,
+    learningRate,
+  });
   const result = await updateMienBacLast2LearningWeights({
-    historyDays: parsePositiveInteger('history-days', Number(process.env.PREDICTION_HISTORY_DAYS ?? 365)),
+    historyDays,
     predictionTop: parsePositiveInteger('prediction-top', Number(process.env.PREDICTION_BLEND_PREDICTION_TOP ?? 20)),
     recentDays: parsePositiveInteger('recent-days', Number(process.env.PREDICTION_TREND_RECENT_DAYS ?? 30)),
     baselineDays: parsePositiveInteger('baseline-days', Number(process.env.PREDICTION_TREND_BASELINE_DAYS ?? 90)),
     trendTop: parsePositiveInteger('trend-top', Number(process.env.PREDICTION_BLEND_TREND_TOP ?? 20)),
-    top: parsePositiveInteger('top', Number(process.env.PREDICTION_BLEND_TOP ?? DEFAULT_OUTPUT_TOP)),
-    backtestDays: parsePositiveInteger('backtest-days', Number(process.env.PREDICTION_LEARNING_BACKTEST_DAYS ?? 60)),
-    learningRate: parsePositiveNumber('learning-rate', Number(process.env.PREDICTION_LEARNING_RATE ?? 0.25)),
+    top,
+    backtestDays,
+    learningRate,
   });
 
+  logger.info('Mien Bac Bayesian prediction learning update completed', { ...bayesianResult });
+  console.table([bayesianResult]);
   logger.info('Mien Bac prediction learning update completed', { ...result });
   console.table([result]);
 }

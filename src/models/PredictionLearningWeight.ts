@@ -5,6 +5,11 @@ export interface PredictionLearningWeightDocumentShape {
   predictionWeight: number;
   trendWeight: number;
   bothListBonus: number;
+  bayesianLongTermWeight: number;
+  bayesianMediumTermWeight: number;
+  bayesianShortTermWeight: number;
+  bayesianVeryRecentWeight: number;
+  bayesianWeekdayWeight: number;
   backtestDays: number;
   hitDayRate: string;
   averageHitsPerDay: string;
@@ -19,6 +24,11 @@ const predictionLearningWeightSchema = new Schema<PredictionLearningWeightDocume
     predictionWeight: { type: Number, required: true },
     trendWeight: { type: Number, required: true },
     bothListBonus: { type: Number, required: true },
+    bayesianLongTermWeight: { type: Number, required: true, default: 0.2 },
+    bayesianMediumTermWeight: { type: Number, required: true, default: 0.25 },
+    bayesianShortTermWeight: { type: Number, required: true, default: 0.25 },
+    bayesianVeryRecentWeight: { type: Number, required: true, default: 0.1 },
+    bayesianWeekdayWeight: { type: Number, required: true, default: 0.2 },
     backtestDays: { type: Number, required: true },
     hitDayRate: { type: String, required: true },
     averageHitsPerDay: { type: String, required: true },

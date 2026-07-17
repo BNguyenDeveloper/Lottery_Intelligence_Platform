@@ -26,6 +26,7 @@ export interface UpdateMienBacLast2LearningResult {
   bothListBonus: number;
   bestPredictionWeight?: number;
   bestTrendWeight?: number;
+  bestBothListBonus?: number;
   backtestDays: number;
   evaluatedDays?: number;
   hitDayRate?: string;
@@ -46,14 +47,18 @@ const WEIGHT_GRID = [
   { predictionWeight: 0.35, trendWeight: 0.65 },
 ] as const;
 
+const BOTH_LIST_BONUS_GRID = [0, 0.025, 0.05, 0.075, 0.1] as const;
+
 export async function updateMienBacLast2LearningWeights(
   options: UpdateMienBacLast2LearningOptions,
 ): Promise<UpdateMienBacLast2LearningResult> {
   const current = await getLatestPredictionLearningWeights();
-  const weightGrid = WEIGHT_GRID.map((weights) => ({
-    ...weights,
-    bothListBonus: current.bothListBonus,
-  }));
+  const weightGrid = WEIGHT_GRID.flatMap((weights) =>
+    BOTH_LIST_BONUS_GRID.map((bothListBonus) => ({
+      ...weights,
+      bothListBonus,
+    })),
+  );
   const backtestRows = await backtestMienBacLast2BlendWeights({
     historyDays: options.historyDays,
     predictionTop: options.predictionTop,
@@ -82,6 +87,7 @@ export async function updateMienBacLast2LearningWeights(
   const learningRate = clamp(options.learningRate, 0.01, 0.5);
   const newPredictionWeight = current.predictionWeight * (1 - learningRate) + best.predictionWeight * learningRate;
   const newTrendWeight = current.trendWeight * (1 - learningRate) + best.trendWeight * learningRate;
+  const newBothListBonus = current.bothListBonus * (1 - learningRate) + best.bothListBonus * learningRate;
   const total = newPredictionWeight + newTrendWeight;
   const normalizedPredictionWeight = total > 0 ? newPredictionWeight / total : DEFAULT_PREDICTION_LEARNING_WEIGHTS.predictionWeight;
   const normalizedTrendWeight = total > 0 ? newTrendWeight / total : DEFAULT_PREDICTION_LEARNING_WEIGHTS.trendWeight;
@@ -89,7 +95,7 @@ export async function updateMienBacLast2LearningWeights(
   const saved = await savePredictionLearningWeights({
     predictionWeight: roundWeight(normalizedPredictionWeight),
     trendWeight: roundWeight(normalizedTrendWeight),
-    bothListBonus: current.bothListBonus,
+    bothListBonus: roundWeight(newBothListBonus),
     backtestDays: options.backtestDays,
     hitDayRate: best.hitDayRate,
     averageHitsPerDay: best.averageHitsPerDay,
@@ -104,6 +110,7 @@ export async function updateMienBacLast2LearningWeights(
     bothListBonus: saved.bothListBonus,
     bestPredictionWeight: best.predictionWeight,
     bestTrendWeight: best.trendWeight,
+    bestBothListBonus: best.bothListBonus,
     backtestDays: options.backtestDays,
     evaluatedDays: best.evaluatedDays,
     hitDayRate: best.hitDayRate,

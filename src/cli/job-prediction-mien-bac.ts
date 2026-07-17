@@ -8,6 +8,7 @@ import {
 } from '../services/mien-bac-prediction.service';
 import { getMienBacMissingHeadFollowUp } from '../services/mien-bac-missing-head-follow-up.service';
 import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snapshot.service';
+import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from '../services/prediction-learning-weight.service';
 import { getRecentLast2Summary } from '../services/recent-last2-summary.service';
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
@@ -92,6 +93,23 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (target === 'last2') {
+    await saveMienBacLast2PredictionSnapshot({
+      predictionDate,
+      targetDate,
+      kind: 'prediction',
+      modelVersion: MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION,
+      rows: rows.map((row) => ({
+        rank: row.rank,
+        number: row.number,
+        predictionScore: row.score,
+        trendScore: '-',
+        combinedScore: row.score,
+        source: 'prediction',
+      })),
+    });
+  }
+
   console.log('Prediction');
   console.table(rows);
   if (trendRows.length > 0) {
@@ -104,6 +122,7 @@ async function main(): Promise<void> {
     await saveMienBacLast2PredictionSnapshot({
       predictionDate,
       targetDate,
+      kind: 'blend',
       rows: blendRows.map((row) => ({
         rank: row.rank,
         number: row.number,

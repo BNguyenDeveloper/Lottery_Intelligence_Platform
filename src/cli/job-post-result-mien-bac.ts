@@ -1,6 +1,8 @@
 import { connectDatabase, disconnectDatabase } from '../config/database';
 import { evaluateMienBacLast2Prediction } from '../services/prediction-evaluation.service';
+import { updateMienBacBayesianLearningWeights } from '../services/prediction-bayesian-learning.service';
 import { updateMienBacLast2LearningWeights } from '../services/prediction-weight-learning.service';
+import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from '../services/prediction-learning-weight.service';
 import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
@@ -42,7 +44,23 @@ async function main(): Promise<void> {
   assertDateString(date);
 
   await connectDatabase();
-  const evaluation = await evaluateMienBacLast2Prediction(date);
+  const predictionEvaluation = await evaluateMienBacLast2Prediction(
+    date,
+    MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION,
+    'prediction',
+  );
+  const evaluation = await evaluateMienBacLast2Prediction(date, undefined, 'blend');
+
+  if (predictionEvaluation) {
+    logger.info('Mien Bac standalone Prediction evaluation completed', {
+      date,
+      hitCount: predictionEvaluation.hitCount,
+      hitRate: predictionEvaluation.hitRate,
+      top5Hit: predictionEvaluation.top5Hit,
+    });
+  } else {
+    logger.warn('Mien Bac standalone Prediction evaluation skipped', { date });
+  }
 
   if (!evaluation) {
     logger.warn('Mien Bac post-result learning skipped evaluation', { date });
@@ -57,6 +75,14 @@ async function main(): Promise<void> {
       top10Hit: evaluation.top10Hit,
     });
   }
+
+  const bayesianLearning = await updateMienBacBayesianLearningWeights({
+    historyDays,
+    backtestDays,
+    top,
+    learningRate,
+  });
+  logger.info('Mien Bac post-result Bayesian learning completed', { date, ...bayesianLearning });
 
   const learning = await updateMienBacLast2LearningWeights({
     historyDays,

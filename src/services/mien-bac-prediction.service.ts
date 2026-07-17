@@ -1,5 +1,9 @@
 import { LotteryNumberMienBacModel } from '../models/LotteryNumber';
-import { getLatestPredictionLearningWeights, PredictionLearningWeights } from './prediction-learning-weight.service';
+import {
+  DEFAULT_PREDICTION_LEARNING_WEIGHTS,
+  getLatestPredictionLearningWeights,
+  PredictionLearningWeights,
+} from './prediction-learning-weight.service';
 
 export type PredictionTarget = 'last2' | 'last3';
 
@@ -11,6 +15,21 @@ export interface MienBacPredictionOptions {
 
 export interface MienBacPredictionBacktestOptions extends MienBacPredictionOptions {
   testDays: number;
+}
+
+export interface MienBacBayesianWeightBacktestOptions {
+  historyDays: number;
+  testDays: number;
+  top: number;
+  weightGrid: BayesianPredictionWeights[];
+}
+
+export interface MienBacBayesianWeightBacktestResult extends BayesianPredictionWeights {
+  evaluatedDays: number;
+  hitDays: number;
+  hitDayRate: string;
+  totalHits: number;
+  averageHitsPerDay: string;
 }
 
 export interface MienBacLast2TrendOptions {
@@ -153,6 +172,15 @@ interface ProbabilitySignals {
   weekday: number;
 }
 
+export type BayesianPredictionWeights = Pick<
+  PredictionLearningWeights,
+  | 'bayesianLongTermWeight'
+  | 'bayesianMediumTermWeight'
+  | 'bayesianShortTermWeight'
+  | 'bayesianVeryRecentWeight'
+  | 'bayesianWeekdayWeight'
+>;
+
 interface TrendCandidate {
   number: string;
   recentCount: number;
@@ -166,6 +194,62 @@ interface TrendCandidate {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export async function backtestMienBacBayesianWeights(
+  options: MienBacBayesianWeightBacktestOptions,
+): Promise<MienBacBayesianWeightBacktestResult[]> {
+  const latest = await LotteryNumberMienBacModel.findOne({ province: 'xsmb' })
+    .sort({ date: -1 })
+    .select({ date: 1 })
+    .lean()
+    .exec();
+
+  if (!latest?.date) return [];
+
+  const fromDate = shiftDate(latest.date, -(options.historyDays + options.testDays - 1));
+  const rows = await LotteryNumberMienBacModel.find({
+    province: 'xsmb',
+    date: { $gte: fromDate, $lte: latest.date },
+  })
+    .select({ date: 1, last2: 1 })
+    .sort({ date: 1 })
+    .lean<HistoryRow[]>()
+    .exec();
+  const dailyHits = buildDailyHits(rows, 'last2');
+  const candidates = buildCandidates('last2');
+  const firstTestIndex = Math.max(1, dailyHits.length - options.testDays);
+  const results = options.weightGrid.map((weights) => ({
+    ...weights,
+    evaluatedDays: 0,
+    hitDays: 0,
+    totalHits: 0,
+  }));
+
+  for (let dayIndex = firstTestIndex; dayIndex < dailyHits.length; dayIndex += 1) {
+    const trainingDays = dailyHits.slice(Math.max(0, dayIndex - options.historyDays), dayIndex);
+    if (trainingDays.length === 0) continue;
+
+    for (const result of results) {
+      const predicted = rankCandidates(candidates, trainingDays, options.top, result);
+      const hitCount = predicted.filter((row) => dailyHits[dayIndex].values.has(row.number)).length;
+      result.evaluatedDays += 1;
+      result.totalHits += hitCount;
+      if (hitCount > 0) result.hitDays += 1;
+    }
+  }
+
+  return results
+    .map((result) => ({
+      ...result,
+      hitDayRate: formatPercent(result.hitDays / Math.max(result.evaluatedDays, 1)),
+      averageHitsPerDay: (result.totalHits / Math.max(result.evaluatedDays, 1)).toFixed(2),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.averageHitsPerDay) - Number(left.averageHitsPerDay) ||
+        parsePercent(right.hitDayRate) - parsePercent(left.hitDayRate),
+    );
+}
 
 export async function backtestMienBacLast2BlendWeights(
   options: MienBacLast2BlendWeightBacktestOptions,
@@ -197,6 +281,8 @@ export async function backtestMienBacLast2BlendWeights(
   }
 
   const candidates = buildCandidates('last2');
+  const learnedWeights = await getLatestPredictionLearningWeights();
+  const bayesianWeights = pickBayesianWeights(learnedWeights);
   const firstTestIndex = Math.max(1, dailyHits.length - options.backtestDays);
   const results = options.weightGrid.map((weights) => ({
     predictionWeight: weights.predictionWeight,
@@ -216,7 +302,7 @@ export async function backtestMienBacLast2BlendWeights(
       continue;
     }
 
-    const predictionRows = rankCandidates(candidates, trainingDays, options.predictionTop);
+    const predictionRows = rankCandidates(candidates, trainingDays, options.predictionTop, bayesianWeights);
     const trendRows = rankTrendCandidates(candidates, trainingDays, options);
 
     for (const result of results) {
@@ -269,6 +355,8 @@ export async function getMienBacLast2PredictionTrendBlend(
 
   const predictionByNumber = new Map(predictionRows.map((row) => [row.number, row]));
   const trendByNumber = new Map(trendRows.map((row) => [row.number, row]));
+  const predictionRankScores = buildRankScoreMap(predictionRows);
+  const trendRankScores = buildRankScoreMap(trendRows);
   const numbers = new Set([...predictionByNumber.keys(), ...trendByNumber.keys()]);
   const weights = await getLatestPredictionLearningWeights();
 
@@ -276,15 +364,14 @@ export async function getMienBacLast2PredictionTrendBlend(
     .map((number) => {
       const prediction = predictionByNumber.get(number);
       const trend = trendByNumber.get(number);
-      const predictionScore = prediction ? Number(prediction.score) : 0;
-      const trendScore = trend ? Number(trend.trendScore) : 0;
+      const predictionScore = predictionRankScores.get(number) ?? 0;
+      const trendScore = trendRankScores.get(number) ?? 0;
       const bothBonus = prediction && trend ? weights.bothListBonus : 0;
-      const combinedScore =
-        clamp(
-          predictionScore * weights.predictionWeight + trendScore * weights.trendWeight + bothBonus,
-          0,
-          1,
-        ) * calculateRecentRepeatPenalty(getBlendGapDays(prediction, trend));
+      const combinedScore = clamp(
+        predictionScore * weights.predictionWeight + trendScore * weights.trendWeight + bothBonus,
+        0,
+        1,
+      );
 
       return {
         number,
@@ -379,9 +466,11 @@ function rankTrendCandidates(candidates: string[], dailyHits: DailyHits[], optio
       const lastSeenDate = findLastSeenDate(candidate, dailyHits);
       const gapDays = lastSeenDate ? diffDays(latestDay.date, lastSeenDate) : totalDays;
       const readinessScore = calculateNextDayReadinessScore(gapDays);
-      const trendScore =
-        clamp(normalize(trendLift, 3) * 0.65 + normalize(recentRate, 0.35) * 0.25 + readinessScore * 0.1, 0, 1) *
-        calculateRecentRepeatPenalty(gapDays);
+      const trendScore = clamp(
+        normalize(trendLift, 3) * 0.65 + normalize(recentRate, 0.35) * 0.25 + readinessScore * 0.1,
+        0,
+        1,
+      );
 
       return {
         number: candidate,
@@ -414,6 +503,8 @@ function rankBlendNumbers(
 ): string[] {
   const predictionByNumber = new Map(predictionRows.map((row) => [row.number, row]));
   const trendByNumber = new Map(trendRows.map((row) => [row.number, row]));
+  const predictionRankScores = buildRankScoreMap(predictionRows);
+  const trendRankScores = buildRankScoreMap(trendRows);
   const numbers = new Set([...predictionByNumber.keys(), ...trendByNumber.keys()]);
 
   return Array.from(numbers)
@@ -421,18 +512,19 @@ function rankBlendNumbers(
       const prediction = predictionByNumber.get(number);
       const trend = trendByNumber.get(number);
       const bothBonus = prediction && trend ? weights.bothListBonus : 0;
-      const combinedScore =
-        clamp(
-          (prediction?.score ?? 0) * weights.predictionWeight + (trend?.trendScore ?? 0) * weights.trendWeight + bothBonus,
-          0,
-          1,
-        ) * calculateRecentRepeatPenalty(getBlendGapDays(prediction, trend));
+      const predictionScore = predictionRankScores.get(number) ?? 0;
+      const trendScore = trendRankScores.get(number) ?? 0;
+      const combinedScore = clamp(
+        predictionScore * weights.predictionWeight + trendScore * weights.trendWeight + bothBonus,
+        0,
+        1,
+      );
 
       return {
         number,
         combinedScore,
-        predictionScore: prediction?.score ?? 0,
-        trendScore: trend?.trendScore ?? 0,
+        predictionScore,
+        trendScore,
       };
     })
     .sort(
@@ -444,6 +536,11 @@ function rankBlendNumbers(
     )
     .slice(0, top)
     .map((row) => row.number);
+}
+
+function buildRankScoreMap<T extends { number: string }>(rows: T[]): Map<string, number> {
+  const denominator = Math.max(rows.length - 1, 1);
+  return new Map(rows.map((row, index) => [row.number, 1 - index / denominator]));
 }
 
 export async function backtestMienBacPrediction(
@@ -475,6 +572,8 @@ export async function backtestMienBacPrediction(
   }
 
   const candidates = buildCandidates(options.target);
+  const learnedWeights = await getLatestPredictionLearningWeights();
+  const bayesianWeights = pickBayesianWeights(learnedWeights);
   const firstTestIndex = Math.max(1, dailyHits.length - options.testDays);
   const days: MienBacPredictionBacktestDay[] = [];
 
@@ -486,7 +585,7 @@ export async function backtestMienBacPrediction(
       continue;
     }
 
-    const predicted = rankCandidates(candidates, trainingDays, options.top).map((row) => row.number);
+    const predicted = rankCandidates(candidates, trainingDays, options.top, bayesianWeights).map((row) => row.number);
     const hits = predicted.filter((candidate) => actualDay.values.has(candidate));
 
     days.push({
@@ -555,7 +654,8 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
   }
 
   const candidates = buildCandidates(options.target);
-  const scored = rankCandidates(candidates, dailyHits, options.top);
+  const learnedWeights = await getLatestPredictionLearningWeights();
+  const scored = rankCandidates(candidates, dailyHits, options.top, pickBayesianWeights(learnedWeights));
 
   return scored
     .map((row, index) => ({
@@ -575,9 +675,14 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
     }));
 }
 
-function rankCandidates(candidates: string[], dailyHits: DailyHits[], top: number): ScoredCandidate[] {
+function rankCandidates(
+  candidates: string[],
+  dailyHits: DailyHits[],
+  top: number,
+  weights: BayesianPredictionWeights = pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS),
+): ScoredCandidate[] {
   return candidates
-    .map((candidate) => scoreCandidate(candidate, dailyHits))
+    .map((candidate) => scoreCandidate(candidate, dailyHits, weights))
     .sort((left, right) => right.score - left.score || right.count - left.count || left.number.localeCompare(right.number))
     .slice(0, top);
 }
@@ -613,9 +718,13 @@ function buildCandidates(target: PredictionTarget): string[] {
   return Array.from({ length: count }, (_, index) => index.toString().padStart(width, '0'));
 }
 
-function scoreCandidate(candidate: string, dailyHits: DailyHits[]): ScoredCandidate {
+function scoreCandidate(
+  candidate: string,
+  dailyHits: DailyHits[],
+  weights: BayesianPredictionWeights,
+): ScoredCandidate {
   const signals = calculateCandidateSignals(candidate, dailyHits);
-  const score = calculateBayesianProbabilityScore(candidate, dailyHits);
+  const score = calculateBayesianProbabilityScore(candidate, dailyHits, weights);
 
   return {
     ...signals,
@@ -632,7 +741,11 @@ function scoreCandidate(candidate: string, dailyHits: DailyHits[]): ScoredCandid
  * The weights are fixed before the backtest, so no part of the test day is used
  * to choose or calibrate them.
  */
-function calculateBayesianProbabilityScore(candidate: string, dailyHits: DailyHits[]): number {
+function calculateBayesianProbabilityScore(
+  candidate: string,
+  dailyHits: DailyHits[],
+  weights: BayesianPredictionWeights,
+): number {
   const totalDays = dailyHits.length;
   const universeSize = inferUniverseSize(candidate);
   const prior = clamp(
@@ -653,14 +766,24 @@ function calculateBayesianProbabilityScore(candidate: string, dailyHits: DailyHi
   };
 
   return clamp(
-    probabilitySignals.longTerm * 0.2 +
-      probabilitySignals.mediumTerm * 0.25 +
-      probabilitySignals.shortTerm * 0.25 +
-      probabilitySignals.veryRecent * 0.1 +
-      probabilitySignals.weekday * 0.2,
+    probabilitySignals.longTerm * weights.bayesianLongTermWeight +
+      probabilitySignals.mediumTerm * weights.bayesianMediumTermWeight +
+      probabilitySignals.shortTerm * weights.bayesianShortTermWeight +
+      probabilitySignals.veryRecent * weights.bayesianVeryRecentWeight +
+      probabilitySignals.weekday * weights.bayesianWeekdayWeight,
     0,
     1,
   );
+}
+
+function pickBayesianWeights(weights: PredictionLearningWeights): BayesianPredictionWeights {
+  return {
+    bayesianLongTermWeight: weights.bayesianLongTermWeight,
+    bayesianMediumTermWeight: weights.bayesianMediumTermWeight,
+    bayesianShortTermWeight: weights.bayesianShortTermWeight,
+    bayesianVeryRecentWeight: weights.bayesianVeryRecentWeight,
+    bayesianWeekdayWeight: weights.bayesianWeekdayWeight,
+  };
 }
 
 function smoothedOccurrenceRate(candidate: string, days: DailyHits[], prior: number, priorStrength: number): number {
@@ -720,27 +843,6 @@ function calculateNextDayReadinessScore(gapDays: number): number {
   const idealGapDays = 8;
   const spread = 14;
   return clamp(Math.exp(-((gapDays - idealGapDays) ** 2) / (2 * spread * spread)), 0, 1);
-}
-
-function calculateRecentRepeatPenalty(gapDays: number): number {
-  if (gapDays <= 0) {
-    return 0.72;
-  }
-
-  if (gapDays === 1) {
-    return 0.88;
-  }
-
-  return 1;
-}
-
-function getBlendGapDays(
-  prediction: { gapDays: string | number } | undefined,
-  trend: { gapDays: string | number } | undefined,
-): number {
-  const predictionGapDays = prediction ? Number(prediction.gapDays) : Number.POSITIVE_INFINITY;
-  const trendGapDays = trend ? Number(trend.gapDays) : Number.POSITIVE_INFINITY;
-  return Math.min(predictionGapDays, trendGapDays);
 }
 
 function calculateWeekdayScore(candidate: string, dailyHits: DailyHits[], latestDate: string): number {

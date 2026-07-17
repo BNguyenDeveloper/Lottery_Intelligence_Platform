@@ -15,6 +15,7 @@ export interface PredictionSnapshotDocumentShape {
   region: 'mien-bac';
   province: 'xsmb';
   target: 'last2';
+  kind: 'prediction' | 'blend';
   rows: PredictionSnapshotRow[];
   modelVersion: string;
   createdAt: Date;
@@ -40,13 +41,17 @@ const predictionSnapshotSchema = new Schema<PredictionSnapshotDocumentShape>(
     region: { type: String, required: true, enum: ['mien-bac'] },
     province: { type: String, required: true, enum: ['xsmb'] },
     target: { type: String, required: true, enum: ['last2'] },
+    kind: { type: String, required: true, enum: ['prediction', 'blend'], default: 'blend' },
     rows: { type: [predictionSnapshotRowSchema], required: true, default: [] },
     modelVersion: { type: String, required: true },
   },
   { timestamps: true },
 );
 
-predictionSnapshotSchema.index({ targetDate: 1, region: 1, province: 1, target: 1, modelVersion: 1 }, { unique: true });
+predictionSnapshotSchema.index(
+  { targetDate: 1, region: 1, province: 1, target: 1, kind: 1, modelVersion: 1 },
+  { unique: true },
+);
 predictionSnapshotSchema.index({ predictionDate: 1 });
 predictionSnapshotSchema.index({ targetDate: 1 });
 

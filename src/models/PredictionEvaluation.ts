@@ -5,6 +5,7 @@ export interface PredictionEvaluationDocumentShape {
   region: 'mien-bac';
   province: 'xsmb';
   target: 'last2';
+  kind: 'prediction' | 'blend';
   modelVersion: string;
   predictedCount: number;
   actualCount: number;
@@ -26,6 +27,7 @@ const predictionEvaluationSchema = new Schema<PredictionEvaluationDocumentShape>
     region: { type: String, required: true, enum: ['mien-bac'] },
     province: { type: String, required: true, enum: ['xsmb'] },
     target: { type: String, required: true, enum: ['last2'] },
+    kind: { type: String, required: true, enum: ['prediction', 'blend'], default: 'blend' },
     modelVersion: { type: String, required: true },
     predictedCount: { type: Number, required: true },
     actualCount: { type: Number, required: true },
@@ -41,7 +43,10 @@ const predictionEvaluationSchema = new Schema<PredictionEvaluationDocumentShape>
   { timestamps: true },
 );
 
-predictionEvaluationSchema.index({ targetDate: 1, region: 1, province: 1, target: 1, modelVersion: 1 }, { unique: true });
+predictionEvaluationSchema.index(
+  { targetDate: 1, region: 1, province: 1, target: 1, kind: 1, modelVersion: 1 },
+  { unique: true },
+);
 predictionEvaluationSchema.index({ targetDate: 1 });
 
 export type PredictionEvaluationDocument = HydratedDocument<PredictionEvaluationDocumentShape>;

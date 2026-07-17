@@ -6,6 +6,7 @@ import { MIEN_BAC_LAST2_MODEL_VERSION } from './prediction-learning-weight.servi
 
 export interface PredictionEvaluationResult {
   targetDate: string;
+  kind: 'prediction' | 'blend';
   predictedCount: number;
   actualCount: number;
   hitCount: number;
@@ -21,19 +22,22 @@ export interface PredictionEvaluationResult {
 export async function evaluateMienBacLast2Prediction(
   targetDate: string,
   modelVersion = MIEN_BAC_LAST2_MODEL_VERSION,
+  kind: 'prediction' | 'blend' = 'blend',
 ): Promise<PredictionEvaluationResult | undefined> {
-  const snapshot = await PredictionSnapshotModel.findOne({
+  const snapshotIdentity = {
     targetDate,
-    region: 'mien-bac',
-    province: 'xsmb',
-    target: 'last2',
+    region: 'mien-bac' as const,
+    province: 'xsmb' as const,
+    target: 'last2' as const,
     modelVersion,
-  })
+    ...(kind === 'prediction' ? { kind } : {}),
+  };
+  const snapshot = await PredictionSnapshotModel.findOne(snapshotIdentity)
     .lean()
     .exec();
 
   if (!snapshot) {
-    logger.warn('No Mien Bac last2 prediction snapshot found for evaluation', { targetDate, modelVersion });
+    logger.warn('No Mien Bac last2 prediction snapshot found for evaluation', { targetDate, modelVersion, kind });
     return undefined;
   }
 
@@ -59,6 +63,7 @@ export async function evaluateMienBacLast2Prediction(
   const missNumbers = predictedNumbers.filter((number) => !actualNumbers.has(number));
   const result: PredictionEvaluationResult = {
     targetDate,
+    kind,
     predictedCount: predictedNumbers.length,
     actualCount: actualNumbers.size,
     hitCount: hitNumbers.length,
@@ -71,20 +76,23 @@ export async function evaluateMienBacLast2Prediction(
     hitRate: formatPercent(hitNumbers.length / Math.max(predictedNumbers.length, 1)),
   };
 
+  const evaluationIdentity = {
+    targetDate,
+    region: 'mien-bac' as const,
+    province: 'xsmb' as const,
+    target: 'last2' as const,
+    modelVersion,
+    ...(kind === 'prediction' ? { kind } : {}),
+  };
   await PredictionEvaluationModel.updateOne(
-    {
-      targetDate,
-      region: 'mien-bac',
-      province: 'xsmb',
-      target: 'last2',
-      modelVersion,
-    },
+    evaluationIdentity,
     {
       $set: {
         ...result,
         region: 'mien-bac',
         province: 'xsmb',
         target: 'last2',
+        kind,
         modelVersion,
       },
     },
