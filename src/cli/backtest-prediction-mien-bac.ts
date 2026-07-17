@@ -48,6 +48,9 @@ async function main(): Promise<void> {
     totalActual: result.totalActual,
     numberHitRate: result.numberHitRate,
     averageHitsPerDay: result.averageHitsPerDay,
+    randomBaselineAverageHitsPerDay: result.randomBaselineAverageHitsPerDay,
+    liftVsRandom: result.liftVsRandom,
+    randomBaselineHitDayRate: result.randomBaselineHitDayRate,
   });
 
   console.table(result.days);

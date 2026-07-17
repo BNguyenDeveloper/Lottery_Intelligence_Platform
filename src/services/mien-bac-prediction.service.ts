@@ -70,6 +70,9 @@ export interface MienBacPredictionBacktestResult {
   totalActual: number;
   numberHitRate: string;
   averageHitsPerDay: string;
+  randomBaselineAverageHitsPerDay: string;
+  liftVsRandom: string;
+  randomBaselineHitDayRate: string;
   days: MienBacPredictionBacktestDay[];
 }
 
@@ -142,6 +145,14 @@ interface ScoredCandidate {
   markovScore: number;
 }
 
+interface ProbabilitySignals {
+  longTerm: number;
+  mediumTerm: number;
+  shortTerm: number;
+  veryRecent: number;
+  weekday: number;
+}
+
 interface TrendCandidate {
   number: string;
   recentCount: number;
@@ -154,40 +165,7 @@ interface TrendCandidate {
   trendScore: number;
 }
 
-type ScoreKey =
-  | 'frequencyScore'
-  | 'recentScore'
-  | 'trendScore'
-  | 'recencyScore'
-  | 'gapScore'
-  | 'weekdayScore'
-  | 'markovScore';
-
-type PredictionWeights = Record<ScoreKey, number>;
-
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const MIN_CALIBRATION_DAYS = 45;
-const MAX_VALIDATION_DAYS = 60;
-
-const SCORE_KEYS: ScoreKey[] = [
-  'frequencyScore',
-  'recentScore',
-  'trendScore',
-  'recencyScore',
-  'gapScore',
-  'weekdayScore',
-  'markovScore',
-];
-
-const DEFAULT_WEIGHTS: PredictionWeights = {
-  frequencyScore: 0.22,
-  recentScore: 0.2,
-  trendScore: 0.13,
-  recencyScore: 0.08,
-  gapScore: 0.11,
-  weekdayScore: 0.1,
-  markovScore: 0.11,
-};
 
 export async function backtestMienBacLast2BlendWeights(
   options: MienBacLast2BlendWeightBacktestOptions,
@@ -525,6 +503,11 @@ export async function backtestMienBacPrediction(
   const hitDays = days.filter((day) => day.hitCount > 0).length;
   const totalHits = days.reduce((sum, day) => sum + day.hitCount, 0);
   const totalActual = days.reduce((sum, day) => sum + day.actualCount, 0);
+  const averageActualPerDay = totalActual / Math.max(evaluatedDays, 1);
+  const candidateCount = options.target === 'last2' ? 100 : 1000;
+  const randomBaselineAverage = options.top * averageActualPerDay / candidateCount;
+  const randomMissProbability = hypergeometricMissProbability(candidateCount, averageActualPerDay, options.top);
+  const modelAverage = totalHits / Math.max(evaluatedDays, 1);
 
   return {
     target: options.target,
@@ -537,7 +520,10 @@ export async function backtestMienBacPrediction(
     totalHits,
     totalActual,
     numberHitRate: formatPercent(totalHits / Math.max(totalActual, 1)),
-    averageHitsPerDay: (totalHits / Math.max(evaluatedDays, 1)).toFixed(2),
+    averageHitsPerDay: modelAverage.toFixed(2),
+    randomBaselineAverageHitsPerDay: randomBaselineAverage.toFixed(2),
+    liftVsRandom: formatPercent(modelAverage / Math.max(randomBaselineAverage, Number.EPSILON) - 1),
+    randomBaselineHitDayRate: formatPercent(1 - randomMissProbability),
     days,
   };
 }
@@ -590,9 +576,8 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
 }
 
 function rankCandidates(candidates: string[], dailyHits: DailyHits[], top: number): ScoredCandidate[] {
-  const weights = calibrateWeights(candidates, dailyHits);
   return candidates
-    .map((candidate) => scoreCandidate(candidate, dailyHits, weights))
+    .map((candidate) => scoreCandidate(candidate, dailyHits))
     .sort((left, right) => right.score - left.score || right.count - left.count || left.number.localeCompare(right.number))
     .slice(0, top);
 }
@@ -628,14 +613,62 @@ function buildCandidates(target: PredictionTarget): string[] {
   return Array.from({ length: count }, (_, index) => index.toString().padStart(width, '0'));
 }
 
-function scoreCandidate(candidate: string, dailyHits: DailyHits[], weights: PredictionWeights): ScoredCandidate {
+function scoreCandidate(candidate: string, dailyHits: DailyHits[]): ScoredCandidate {
   const signals = calculateCandidateSignals(candidate, dailyHits);
-  const score = calculateWeightedScore(signals, weights);
+  const score = calculateBayesianProbabilityScore(candidate, dailyHits);
 
   return {
     ...signals,
     score,
   };
+}
+
+/**
+ * Estimates the next-draw occurrence probability with Beta-Binomial shrinkage.
+ *
+ * Lottery histories are short relative to the number of candidates. Raw hot/cold
+ * rates therefore overreact to noise. Each window is pulled toward the observed
+ * market-wide occurrence rate; shorter windows receive stronger regularisation.
+ * The weights are fixed before the backtest, so no part of the test day is used
+ * to choose or calibrate them.
+ */
+function calculateBayesianProbabilityScore(candidate: string, dailyHits: DailyHits[]): number {
+  const totalDays = dailyHits.length;
+  const universeSize = inferUniverseSize(candidate);
+  const prior = clamp(
+    dailyHits.reduce((sum, day) => sum + day.values.size, 0) / Math.max(totalDays * universeSize, 1),
+    1 / universeSize,
+    0.95,
+  );
+  const latestDate = dailyHits[dailyHits.length - 1].date;
+  const tomorrowDayOfWeek = new Date(`${shiftDate(latestDate, 1)}T00:00:00.000Z`).getUTCDay();
+  const matchingWeekdays = dailyHits.filter((day) => day.dayOfWeek === tomorrowDayOfWeek);
+
+  const probabilitySignals: ProbabilitySignals = {
+    longTerm: smoothedOccurrenceRate(candidate, dailyHits, prior, 120),
+    mediumTerm: smoothedOccurrenceRate(candidate, dailyHits.slice(-90), prior, 70),
+    shortTerm: smoothedOccurrenceRate(candidate, dailyHits.slice(-30), prior, 45),
+    veryRecent: smoothedOccurrenceRate(candidate, dailyHits.slice(-14), prior, 35),
+    weekday: smoothedOccurrenceRate(candidate, matchingWeekdays, prior, 45),
+  };
+
+  return clamp(
+    probabilitySignals.longTerm * 0.2 +
+      probabilitySignals.mediumTerm * 0.25 +
+      probabilitySignals.shortTerm * 0.25 +
+      probabilitySignals.veryRecent * 0.1 +
+      probabilitySignals.weekday * 0.2,
+    0,
+    1,
+  );
+}
+
+function smoothedOccurrenceRate(candidate: string, days: DailyHits[], prior: number, priorStrength: number): number {
+  return (countHits(candidate, days) + prior * priorStrength) / (days.length + priorStrength);
+}
+
+function inferUniverseSize(candidate: string): number {
+  return candidate.length === 2 ? 100 : 1000;
 }
 
 function calculateCandidateSignals(candidate: string, dailyHits: DailyHits[]): Omit<ScoredCandidate, 'score'> {
@@ -675,66 +708,6 @@ function calculateCandidateSignals(candidate: string, dailyHits: DailyHits[]): O
   };
 }
 
-function calibrateWeights(candidates: string[], dailyHits: DailyHits[]): PredictionWeights {
-  if (dailyHits.length < MIN_CALIBRATION_DAYS) {
-    return DEFAULT_WEIGHTS;
-  }
-
-  const validationDays = Math.min(MAX_VALIDATION_DAYS, Math.max(14, Math.floor(dailyHits.length * 0.2)));
-  const firstValidationIndex = Math.max(30, dailyHits.length - validationDays);
-  const signalTotals = createScoreMap(0);
-  const hitSignalTotals = createScoreMap(0);
-  let evaluatedCandidates = 0;
-  let hitCandidates = 0;
-
-  for (let dayIndex = firstValidationIndex; dayIndex < dailyHits.length; dayIndex += 1) {
-    const trainingDays = dailyHits.slice(0, dayIndex);
-    const actualValues = dailyHits[dayIndex].values;
-
-    for (const candidate of candidates) {
-      const signals = calculateCandidateSignals(candidate, trainingDays);
-      evaluatedCandidates += 1;
-
-      for (const key of SCORE_KEYS) {
-        signalTotals[key] += signals[key];
-      }
-
-      if (!actualValues.has(candidate)) {
-        continue;
-      }
-
-      hitCandidates += 1;
-      for (const key of SCORE_KEYS) {
-        hitSignalTotals[key] += signals[key];
-      }
-    }
-  }
-
-  if (evaluatedCandidates === 0 || hitCandidates === 0) {
-    return DEFAULT_WEIGHTS;
-  }
-
-  const calibrated = createScoreMap(0);
-  for (const key of SCORE_KEYS) {
-    const overallAverage = signalTotals[key] / evaluatedCandidates;
-    const hitAverage = hitSignalTotals[key] / hitCandidates;
-    const lift = overallAverage > 0 ? hitAverage / overallAverage : 1;
-    calibrated[key] = DEFAULT_WEIGHTS[key] * clamp(lift, 0.55, 1.65);
-  }
-
-  return normalizeWeights(calibrated);
-}
-
-function calculateWeightedScore(candidate: Omit<ScoredCandidate, 'score'>, weights: PredictionWeights): number {
-  const baseScore = clamp(
-    SCORE_KEYS.reduce((sum, key) => sum + candidate[key] * weights[key], 0),
-    0,
-    1,
-  );
-
-  return baseScore * calculateRecentRepeatPenalty(candidate.gapDays);
-}
-
 function calculateNextDayReadinessScore(gapDays: number): number {
   if (gapDays <= 0) {
     return 0.05;
@@ -768,32 +741,6 @@ function getBlendGapDays(
   const predictionGapDays = prediction ? Number(prediction.gapDays) : Number.POSITIVE_INFINITY;
   const trendGapDays = trend ? Number(trend.gapDays) : Number.POSITIVE_INFINITY;
   return Math.min(predictionGapDays, trendGapDays);
-}
-
-function createScoreMap(value: number): PredictionWeights {
-  return {
-    frequencyScore: value,
-    recentScore: value,
-    trendScore: value,
-    recencyScore: value,
-    gapScore: value,
-    weekdayScore: value,
-    markovScore: value,
-  };
-}
-
-function normalizeWeights(weights: PredictionWeights): PredictionWeights {
-  const total = SCORE_KEYS.reduce((sum, key) => sum + weights[key], 0);
-  if (total <= 0) {
-    return DEFAULT_WEIGHTS;
-  }
-
-  const normalized = createScoreMap(0);
-  for (const key of SCORE_KEYS) {
-    normalized[key] = weights[key] / total;
-  }
-
-  return normalized;
 }
 
 function calculateWeekdayScore(candidate: string, dailyHits: DailyHits[], latestDate: string): number {
@@ -877,4 +824,16 @@ function formatPercent(value: number): string {
 
 function parsePercent(value: string): number {
   return Number(value.replace('%', ''));
+}
+
+function hypergeometricMissProbability(universeSize: number, actualCount: number, picks: number): number {
+  const roundedActualCount = Math.max(0, Math.min(universeSize, Math.round(actualCount)));
+  const safePicks = Math.max(0, Math.min(universeSize, picks));
+  let probability = 1;
+
+  for (let index = 0; index < safePicks; index += 1) {
+    probability *= (universeSize - roundedActualCount - index) / (universeSize - index);
+  }
+
+  return clamp(probability, 0, 1);
 }
