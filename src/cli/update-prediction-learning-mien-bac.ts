@@ -3,7 +3,7 @@ import { updateMienBacBayesianLearningWeights } from '../services/prediction-bay
 import { updateMienBacLast2LearningWeights } from '../services/prediction-weight-learning.service';
 import { logger } from '../utils/logger';
 
-const DEFAULT_OUTPUT_TOP = 10;
+const DEFAULT_OUTPUT_TOP = 5;
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);

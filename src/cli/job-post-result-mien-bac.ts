@@ -6,7 +6,7 @@ import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from '../services/predicti
 import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
-const DEFAULT_OUTPUT_TOP = 10;
+const DEFAULT_OUTPUT_TOP = 5;
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);

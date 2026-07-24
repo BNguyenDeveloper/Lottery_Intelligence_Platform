@@ -13,7 +13,7 @@ import { getRecentLast2Summary } from '../services/recent-last2-summary.service'
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
-const DEFAULT_PREDICTION_TOP = 10;
+const DEFAULT_PREDICTION_TOP = 5;
 const DEFAULT_AUXILIARY_TOP = 5;
 const DEFAULT_RECENT_SUMMARY_DAYS = 7;
 const DEFAULT_MISSING_HEAD_TOP = 5;

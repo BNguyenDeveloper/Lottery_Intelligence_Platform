@@ -53,4 +53,4 @@ jobs:
           [ -n "$EMAIL_TO" ] && echo "EMAIL_TO configured: yes" || echo "EMAIL_TO configured: no"
 
       - name: Run Mien Bac prediction
-        run: npm run job:prediction:mien-bac -- --top 10 --trend-top 10 --blend-top 10
+        run: npm run job:prediction:mien-bac -- --top 5 --trend-top 5 --blend-top 5
