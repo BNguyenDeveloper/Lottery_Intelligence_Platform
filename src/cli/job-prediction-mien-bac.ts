@@ -13,7 +13,8 @@ import { getRecentLast2Summary } from '../services/recent-last2-summary.service'
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
-const DEFAULT_OUTPUT_TOP = 5;
+const DEFAULT_PREDICTION_TOP = 10;
+const DEFAULT_AUXILIARY_TOP = 5;
 const DEFAULT_RECENT_SUMMARY_DAYS = 7;
 const DEFAULT_MISSING_HEAD_TOP = 5;
 
@@ -31,15 +32,17 @@ function parseTarget(value: string | undefined): PredictionTarget {
 async function main(): Promise<void> {
   const target = parseTarget(option('target') ?? process.env.PREDICTION_TARGET);
   const historyDays = Number(option('history-days') ?? process.env.PREDICTION_HISTORY_DAYS ?? 365);
-  const top = Number(option('top') ?? process.env.PREDICTION_TOP ?? DEFAULT_OUTPUT_TOP);
+  const top = Number(option('top') ?? process.env.PREDICTION_TOP ?? DEFAULT_PREDICTION_TOP);
   const trendRecentDays = Number(option('trend-recent-days') ?? process.env.PREDICTION_TREND_RECENT_DAYS ?? 30);
   const trendBaselineDays = Number(option('trend-baseline-days') ?? process.env.PREDICTION_TREND_BASELINE_DAYS ?? 90);
-  const trendTop = Number(option('trend-top') ?? process.env.PREDICTION_TREND_TOP ?? 5);
+  const trendTop = Number(option('trend-top') ?? process.env.PREDICTION_TREND_TOP ?? DEFAULT_PREDICTION_TOP);
   const blendPredictionTop = Number(option('blend-prediction-top') ?? process.env.PREDICTION_BLEND_PREDICTION_TOP ?? 20);
   const blendTrendTop = Number(option('blend-trend-top') ?? process.env.PREDICTION_BLEND_TREND_TOP ?? 20);
   const blendTop = Number(option('blend-top') ?? process.env.PREDICTION_BLEND_TOP ?? top);
   const recentSummaryDays = Number(option('recent-summary-days') ?? process.env.PREDICTION_RECENT_SUMMARY_DAYS ?? DEFAULT_RECENT_SUMMARY_DAYS);
-  const recentSummaryTop = Number(option('recent-summary-top') ?? process.env.PREDICTION_RECENT_SUMMARY_TOP ?? DEFAULT_OUTPUT_TOP);
+  const recentSummaryTop = Number(
+    option('recent-summary-top') ?? process.env.PREDICTION_RECENT_SUMMARY_TOP ?? DEFAULT_AUXILIARY_TOP,
+  );
   const missingHeadTop = Number(option('missing-head-top') ?? process.env.PREDICTION_MISSING_HEAD_TOP ?? DEFAULT_MISSING_HEAD_TOP);
   const predictionDate = getVietnamDateString();
   const targetDate = option('target-date') ?? process.env.PREDICTION_TARGET_DATE ?? shiftDate(predictionDate, 1);
@@ -208,6 +211,7 @@ function buildPredictionEmailText(
       `count=${row.count}`,
       `lastSeen=${row.lastSeenDate}`,
       `gapDays=${row.gapDays}`,
+      `repeatPenalty=${row.repeatPenalty}`,
       `frequency=${row.frequencyScore}`,
       `recent=${row.recentScore}`,
       `trend=${row.trendScore}`,
@@ -303,6 +307,7 @@ function buildPredictionEmailHtml(
         <td>${escapeHtml(String(row.count))}</td>
         <td>${escapeHtml(row.lastSeenDate)}</td>
         <td>${escapeHtml(String(row.gapDays))}</td>
+        <td>${escapeHtml(row.repeatPenalty)}</td>
         <td>${escapeHtml(row.frequencyScore)}</td>
         <td>${escapeHtml(row.recentScore)}</td>
         <td>${escapeHtml(row.trendScore)}</td>
@@ -473,6 +478,7 @@ function buildPredictionEmailHtml(
           <th>Count</th>
           <th>Last Seen</th>
           <th>Gap Days</th>
+          <th>Repeat Penalty</th>
           <th>Frequency</th>
           <th>Recent</th>
           <th>Trend</th>

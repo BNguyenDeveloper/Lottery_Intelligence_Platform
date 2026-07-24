@@ -59,6 +59,7 @@ export interface MienBacPredictionRow {
   lastSeenDate: string;
   gapDays: number;
   score: string;
+  repeatPenalty: string;
   frequencyScore: string;
   recentScore: string;
   trendScore: string;
@@ -155,6 +156,7 @@ interface ScoredCandidate {
   lastSeenDate: string;
   gapDays: number;
   score: number;
+  repeatPenalty: number;
   frequencyScore: number;
   recentScore: number;
   trendScore: number;
@@ -665,6 +667,7 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
       lastSeenDate: row.lastSeenDate,
       gapDays: row.gapDays,
       score: formatScore(row.score),
+      repeatPenalty: formatScore(row.repeatPenalty),
       frequencyScore: formatScore(row.frequencyScore),
       recentScore: formatScore(row.recentScore),
       trendScore: formatScore(row.trendScore),
@@ -724,12 +727,29 @@ function scoreCandidate(
   weights: BayesianPredictionWeights,
 ): ScoredCandidate {
   const signals = calculateCandidateSignals(candidate, dailyHits);
-  const score = calculateBayesianProbabilityScore(candidate, dailyHits, weights);
+  const bayesianScore = calculateBayesianProbabilityScore(candidate, dailyHits, weights);
+  const repeatPenalty = calculateRepeatPenalty(signals.gapDays);
+  const score = bayesianScore * repeatPenalty;
 
   return {
     ...signals,
     score,
+    repeatPenalty,
   };
+}
+
+/**
+ * Reduces short-term hot-number bias without excluding repeat occurrences.
+ *
+ * A candidate seen on the latest draw receives the strongest discount because
+ * that same hit also raises its 14-day and 30-day Bayesian signals. The penalty
+ * fades quickly and disappears after three draw days.
+ */
+function calculateRepeatPenalty(gapDays: number): number {
+  if (gapDays <= 0) return 0.55;
+  if (gapDays === 1) return 0.75;
+  if (gapDays === 2) return 0.9;
+  return 1;
 }
 
 /**
@@ -794,7 +814,10 @@ function inferUniverseSize(candidate: string): number {
   return candidate.length === 2 ? 100 : 1000;
 }
 
-function calculateCandidateSignals(candidate: string, dailyHits: DailyHits[]): Omit<ScoredCandidate, 'score'> {
+function calculateCandidateSignals(
+  candidate: string,
+  dailyHits: DailyHits[],
+): Omit<ScoredCandidate, 'score' | 'repeatPenalty'> {
   const totalDays = dailyHits.length;
   const recentWindow = Math.min(30, totalDays);
   const olderWindow = Math.min(90, Math.max(totalDays - recentWindow, 1));

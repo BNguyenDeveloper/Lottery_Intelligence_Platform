@@ -1,7 +1,7 @@
 import { PredictionLearningWeightModel } from '../models/PredictionLearningWeight';
 import { getVietnamDateString } from '../utils/date';
 
-export const MIEN_BAC_LAST2_MODEL_VERSION = 'mien-bac-last2-bayesian-v2';
+export const MIEN_BAC_LAST2_MODEL_VERSION = 'mien-bac-last2-bayesian-v3-repeat-penalty';
 export const MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION = `${MIEN_BAC_LAST2_MODEL_VERSION}-prediction`;
 
 export interface PredictionLearningWeights {
