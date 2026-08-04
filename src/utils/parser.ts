@@ -88,6 +88,20 @@ export function parsePrizeResults(html: string): LotteryPrizeResults {
   const resultTable = findResultTable($, false);
 
   if (!resultTable) {
+    const compactResultTable = $('table.result').first();
+
+    compactResultTable.find('tr').each((_, row) => {
+      const cells = $(row).find('th,td').toArray();
+      const prize = PRIZE_LABELS[normalizeLabel($(cells[0]).text())];
+      const numberCell = cells[1];
+
+      if (!prize || !numberCell) {
+        return;
+      }
+
+      results[prize].push(...extractPrizeNumbers($(numberCell).text(), prize));
+    });
+
     return results;
   }
 

@@ -102,8 +102,22 @@ export class XsktCrawlerService implements LotteryCrawler {
     }
 
     const sourceUrl = this.buildProvinceUrl(date, province.sourcePath ?? province.code);
-    const response = await this.client.get<string>(sourceUrl);
-    const results = parsePrizeResults(response.data);
+    let resolvedSourceUrl = sourceUrl;
+    let source = 'xskt.net';
+    let html: string;
+
+    try {
+      const response = await this.client.get<string>(sourceUrl);
+      html = response.data;
+    } catch (error) {
+      logger.warn('Primary northern source failed', { date, province: province.code, ...errorMeta(error) });
+      resolvedSourceUrl = this.buildFallbackProvinceUrl(date, province.sourcePath ?? province.code);
+      source = 'xskt.com.vn';
+      const fallbackResponse = await this.client.get<string>(resolvedSourceUrl);
+      html = fallbackResponse.data;
+    }
+
+    const results = parsePrizeResults(html);
 
     if (Object.values(results).every((numbers) => numbers.length === 0)) {
       return null;
@@ -115,8 +129,8 @@ export class XsktCrawlerService implements LotteryCrawler {
       province: province.code,
       stationName: province.name,
       results,
-      source: 'xskt',
-      sourceUrl,
+      source,
+      sourceUrl: resolvedSourceUrl,
     };
   }
 
@@ -130,6 +144,11 @@ export class XsktCrawlerService implements LotteryCrawler {
         .replace('{yyyy}', yyyy);
     }
 
+    return `${env.lotterySourceBaseUrl.replace(/\/$/, '')}/${sourcePath}/${dd}-${mm}-${yyyy}`;
+  }
+
+  private buildFallbackProvinceUrl(date: string, sourcePath: string): string {
+    const { dd, mm, yyyy } = toXsktDateParts(date);
     return `${env.lotterySourceBaseUrl.replace(/\/$/, '')}/${sourcePath}/${dd}-${mm}-${yyyy}`;
   }
 
