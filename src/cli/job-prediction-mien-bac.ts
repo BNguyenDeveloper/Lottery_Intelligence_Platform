@@ -219,6 +219,11 @@ function buildPredictionEmailText(
       `gap=${row.gapScore}`,
       `weekday=${row.weekdayScore}`,
       `markov=${row.markovScore}`,
+      `soiCau=${row.soiCauScore}`,
+      `reverse=${row.reverseScore}`,
+      `cycle=${row.cycleScore}`,
+      `digit=${row.digitScore}`,
+      `bridge=${row.bridgeScore}`,
     ].join(' | '),
   );
   const trendHeader = trendRows.length > 0 ? ['', 'Last2 Trend', ''] : [];
@@ -315,6 +320,11 @@ function buildPredictionEmailHtml(
         <td>${escapeHtml(row.gapScore)}</td>
         <td>${escapeHtml(row.weekdayScore)}</td>
         <td>${escapeHtml(row.markovScore)}</td>
+        <td>${escapeHtml(row.soiCauScore)}</td>
+        <td>${escapeHtml(row.reverseScore)}</td>
+        <td>${escapeHtml(row.cycleScore)}</td>
+        <td>${escapeHtml(row.digitScore)}</td>
+        <td>${escapeHtml(row.bridgeScore)}</td>
       </tr>`,
     )
     .join('');
@@ -486,6 +496,11 @@ function buildPredictionEmailHtml(
           <th>Gap</th>
           <th>Weekday</th>
           <th>Markov</th>
+          <th>Soi Cau</th>
+          <th>Reverse</th>
+          <th>Cycle</th>
+          <th>Digit</th>
+          <th>Bridge</th>
         </tr>
       </thead>
       <tbody>${tableRows}</tbody>

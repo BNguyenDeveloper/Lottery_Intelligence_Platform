@@ -1,7 +1,7 @@
 import { PredictionLearningWeightModel } from '../models/PredictionLearningWeight';
 import { getVietnamDateString } from '../utils/date';
 
-export const MIEN_BAC_LAST2_MODEL_VERSION = 'mien-bac-last2-bayesian-v3-repeat-penalty';
+export const MIEN_BAC_LAST2_MODEL_VERSION = 'mien-bac-last2-bayesian-v4-soi-cau-005';
 export const MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION = `${MIEN_BAC_LAST2_MODEL_VERSION}-prediction`;
 
 export interface PredictionLearningWeights {
@@ -22,14 +22,14 @@ export interface PredictionLearningWeights {
 
 export const DEFAULT_PREDICTION_LEARNING_WEIGHTS: PredictionLearningWeights = {
   modelVersion: MIEN_BAC_LAST2_MODEL_VERSION,
-  predictionWeight: 0.65,
-  trendWeight: 0.35,
-  bothListBonus: 0.05,
-  bayesianLongTermWeight: 0.2,
-  bayesianMediumTermWeight: 0.25,
-  bayesianShortTermWeight: 0.25,
-  bayesianVeryRecentWeight: 0.1,
-  bayesianWeekdayWeight: 0.2,
+  predictionWeight: 0.3842,
+  trendWeight: 0.6158,
+  bothListBonus: 0.0304,
+  bayesianLongTermWeight: 0.1542,
+  bayesianMediumTermWeight: 0.2042,
+  bayesianShortTermWeight: 0.2729,
+  bayesianVeryRecentWeight: 0.1915,
+  bayesianWeekdayWeight: 0.1771,
   backtestDays: 0,
   hitDayRate: '0.00%',
   averageHitsPerDay: '0.00',

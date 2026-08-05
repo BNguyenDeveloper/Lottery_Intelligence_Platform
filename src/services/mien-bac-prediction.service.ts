@@ -11,10 +11,12 @@ export interface MienBacPredictionOptions {
   target: PredictionTarget;
   historyDays: number;
   top: number;
+  soiCauWeight?: number;
 }
 
 export interface MienBacPredictionBacktestOptions extends MienBacPredictionOptions {
   testDays: number;
+  throughDate?: string;
 }
 
 export interface MienBacBayesianWeightBacktestOptions {
@@ -67,6 +69,11 @@ export interface MienBacPredictionRow {
   gapScore: string;
   weekdayScore: string;
   markovScore: string;
+  soiCauScore: string;
+  reverseScore: string;
+  cycleScore: string;
+  digitScore: string;
+  bridgeScore: string;
 }
 
 export interface MienBacPredictionBacktestDay {
@@ -164,6 +171,11 @@ interface ScoredCandidate {
   gapScore: number;
   weekdayScore: number;
   markovScore: number;
+  soiCauScore: number;
+  reverseScore: number;
+  cycleScore: number;
+  digitScore: number;
+  bridgeScore: number;
 }
 
 interface ProbabilitySignals {
@@ -196,6 +208,7 @@ interface TrendCandidate {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+export const DEFAULT_SOI_CAU_WEIGHT = 0.05;
 
 export async function backtestMienBacBayesianWeights(
   options: MienBacBayesianWeightBacktestOptions,
@@ -548,7 +561,10 @@ function buildRankScoreMap<T extends { number: string }>(rows: T[]): Map<string,
 export async function backtestMienBacPrediction(
   options: MienBacPredictionBacktestOptions,
 ): Promise<MienBacPredictionBacktestResult | undefined> {
-  const latest = await LotteryNumberMienBacModel.findOne({ province: 'xsmb' })
+  const latest = await LotteryNumberMienBacModel.findOne({
+    province: 'xsmb',
+    ...(options.throughDate ? { date: { $lte: options.throughDate } } : {}),
+  })
     .sort({ date: -1 })
     .select({ date: 1 })
     .lean()
@@ -587,7 +603,13 @@ export async function backtestMienBacPrediction(
       continue;
     }
 
-    const predicted = rankCandidates(candidates, trainingDays, options.top, bayesianWeights).map((row) => row.number);
+      const predicted = rankCandidates(
+        candidates,
+        trainingDays,
+        options.top,
+        bayesianWeights,
+        options.soiCauWeight ?? DEFAULT_SOI_CAU_WEIGHT,
+      ).map((row) => row.number);
     const hits = predicted.filter((candidate) => actualDay.values.has(candidate));
 
     days.push({
@@ -657,7 +679,13 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
 
   const candidates = buildCandidates(options.target);
   const learnedWeights = await getLatestPredictionLearningWeights();
-  const scored = rankCandidates(candidates, dailyHits, options.top, pickBayesianWeights(learnedWeights));
+  const scored = rankCandidates(
+    candidates,
+    dailyHits,
+    options.top,
+    pickBayesianWeights(learnedWeights),
+    options.soiCauWeight ?? DEFAULT_SOI_CAU_WEIGHT,
+  );
 
   return scored
     .map((row, index) => ({
@@ -675,6 +703,11 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
       gapScore: formatScore(row.gapScore),
       weekdayScore: formatScore(row.weekdayScore),
       markovScore: formatScore(row.markovScore),
+      soiCauScore: formatScore(row.soiCauScore),
+      reverseScore: formatScore(row.reverseScore),
+      cycleScore: formatScore(row.cycleScore),
+      digitScore: formatScore(row.digitScore),
+      bridgeScore: formatScore(row.bridgeScore),
     }));
 }
 
@@ -683,9 +716,10 @@ function rankCandidates(
   dailyHits: DailyHits[],
   top: number,
   weights: BayesianPredictionWeights = pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS),
+  soiCauWeight = DEFAULT_SOI_CAU_WEIGHT,
 ): ScoredCandidate[] {
   return candidates
-    .map((candidate) => scoreCandidate(candidate, dailyHits, weights))
+    .map((candidate) => scoreCandidate(candidate, dailyHits, weights, soiCauWeight))
     .sort((left, right) => right.score - left.score || right.count - left.count || left.number.localeCompare(right.number))
     .slice(0, top);
 }
@@ -725,11 +759,14 @@ function scoreCandidate(
   candidate: string,
   dailyHits: DailyHits[],
   weights: BayesianPredictionWeights,
+  soiCauWeight: number,
 ): ScoredCandidate {
   const signals = calculateCandidateSignals(candidate, dailyHits);
   const bayesianScore = calculateBayesianProbabilityScore(candidate, dailyHits, weights);
   const repeatPenalty = calculateRepeatPenalty(signals.gapDays);
-  const score = bayesianScore * repeatPenalty;
+  const safeSoiCauWeight = clamp(soiCauWeight, 0, 1);
+  const soiCauAdjustment = 1 + safeSoiCauWeight * (signals.soiCauScore - 0.5) * 2;
+  const score = bayesianScore * soiCauAdjustment * repeatPenalty;
 
   return {
     ...signals,
@@ -838,6 +875,15 @@ function calculateCandidateSignals(
   const gapScore = 1 - Math.exp(-gapDays / 28);
   const weekdayScore = calculateWeekdayScore(candidate, dailyHits, latestDay.date);
   const markovScore = calculateMarkovScore(candidate, dailyHits, latestValues);
+  const reverseScore = calculateReverseScore(candidate, dailyHits);
+  const cycleScore = calculateCycleScore(candidate, dailyHits, gapDays);
+  const digitScore = calculateDigitScore(candidate, dailyHits);
+  const bridgeScore = calculateBridgeScore(candidate, dailyHits);
+  const soiCauScore = clamp(
+    reverseScore * 0.35 + cycleScore * 0.3 + digitScore * 0.2 + bridgeScore * 0.15,
+    0,
+    1,
+  );
 
   return {
     number: candidate,
@@ -851,7 +897,67 @@ function calculateCandidateSignals(
     gapScore,
     weekdayScore,
     markovScore,
+    soiCauScore,
+    reverseScore,
+    cycleScore,
+    digitScore,
+    bridgeScore,
   };
+}
+
+function calculateReverseScore(candidate: string, dailyHits: DailyHits[]): number {
+  if (candidate.length !== 2) return 0.5;
+  const reversed = `${candidate[1]}${candidate[0]}`;
+  const days = dailyHits.slice(-30);
+  const prior = days.reduce((sum, day) => sum + day.values.size, 0) / Math.max(days.length * 100, 1);
+  return normalize(smoothedOccurrenceRate(reversed, days, prior, 35), 0.45);
+}
+
+function calculateCycleScore(candidate: string, dailyHits: DailyHits[], gapDays: number): number {
+  const hitIndexes = dailyHits
+    .map((day, index) => (day.values.has(candidate) ? index : -1))
+    .filter((index) => index >= 0);
+  if (hitIndexes.length < 3) return 0.5;
+
+  const intervals = hitIndexes.slice(1).map((index, position) => index - hitIndexes[position]).slice(-8);
+  const sorted = [...intervals].sort((left, right) => left - right);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const expectedNextGap = gapDays + 1;
+  const spread = Math.max(2, median * 0.75);
+  return clamp(Math.exp(-((expectedNextGap - median) ** 2) / (2 * spread * spread)), 0, 1);
+}
+
+function calculateDigitScore(candidate: string, dailyHits: DailyHits[]): number {
+  if (candidate.length !== 2) return 0.5;
+  const days = dailyHits.slice(-30);
+  const values = days.flatMap((day) => Array.from(day.values));
+  if (values.length === 0) return 0.5;
+
+  const headRate = values.filter((value) => value[0] === candidate[0]).length / values.length;
+  const tailRate = values.filter((value) => value[1] === candidate[1]).length / values.length;
+  const centeredHead = clamp(0.5 + (headRate - 0.1) / 0.08, 0, 1);
+  const centeredTail = clamp(0.5 + (tailRate - 0.1) / 0.08, 0, 1);
+  return (centeredHead + centeredTail) / 2;
+}
+
+function calculateBridgeScore(candidate: string, dailyHits: DailyHits[]): number {
+  if (candidate.length !== 2) return 0.5;
+  const reversed = `${candidate[1]}${candidate[0]}`;
+  const shadow = candidate
+    .split('')
+    .map((digit) => ((Number(digit) + 5) % 10).toString())
+    .join('');
+  const weights = [1, 0.6, 0.3];
+  let score = 0;
+  let totalWeight = 0;
+
+  dailyHits.slice(-3).reverse().forEach((day, index) => {
+    const weight = weights[index];
+    totalWeight += weight;
+    if (day.values.has(reversed) || day.values.has(shadow)) score += weight;
+  });
+
+  return totalWeight > 0 ? score / totalWeight : 0.5;
 }
 
 function calculateNextDayReadinessScore(gapDays: number): number {
