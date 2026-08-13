@@ -5,6 +5,8 @@ import { updateMienBacLast2LearningWeights } from '../services/prediction-weight
 import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from '../services/prediction-learning-weight.service';
 import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
+import { evaluateMienBacDaSo } from '../services/da-so-evaluation.service';
+import { updateMienBacDaSoLearning } from '../services/da-so-learning.service';
 
 const DEFAULT_OUTPUT_TOP = 5;
 
@@ -95,6 +97,35 @@ async function main(): Promise<void> {
     learningRate,
   });
   logger.info('Mien Bac post-result learning completed', { date, ...learning });
+  const daSoEvaluation = await evaluateDaSoFailSoft(date);
+  if (daSoEvaluation) logger.info('Mien Bac da so evaluation completed', daSoEvaluation);
+  const daSoLearning = await learnDaSoFailSoft({ historyDays, backtestDays, learningRate });
+  if (daSoLearning) logger.info('Mien Bac da so learning completed', { date, ...daSoLearning });
+}
+
+async function evaluateDaSoFailSoft(date: string): ReturnType<typeof evaluateMienBacDaSo> {
+  try {
+    return await evaluateMienBacDaSo(date);
+  } catch (error) {
+    logger.warn('Mien Bac da so evaluation skipped after an isolated failure', {
+      date,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+async function learnDaSoFailSoft(
+  options: Parameters<typeof updateMienBacDaSoLearning>[0],
+): ReturnType<typeof updateMienBacDaSoLearning> {
+  try {
+    return await updateMienBacDaSoLearning(options);
+  } catch (error) {
+    logger.warn('Mien Bac da so learning skipped after an isolated failure', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
 }
 
 main()

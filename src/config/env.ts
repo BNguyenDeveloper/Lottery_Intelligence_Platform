@@ -5,7 +5,6 @@ dotenv.config();
 const requiredKeys = [
   'MONGODB_URI',
   'LOTTERY_SOURCE_BASE_URL',
-  'XSKT_XSMB_DAILY_URL_TEMPLATE',
 ] as const;
 
 function requireEnv(name: string): string {
@@ -32,6 +31,7 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   mongodbUri: requireEnv('MONGODB_URI'),
   lotterySourceBaseUrl: requireEnv('LOTTERY_SOURCE_BASE_URL'),
-  xsktXsmbDailyUrlTemplate: requireEnv('XSKT_XSMB_DAILY_URL_TEMPLATE'),
+  xsmbDailyUrlTemplate:
+    process.env.XSMB_DAILY_URL_TEMPLATE ?? 'https://xoso.com.vn/xsmb-{dd}-{mm}-{yyyy}.html',
   lotteryFetchTimeoutMs: timeout,
 };

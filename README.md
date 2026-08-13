@@ -120,7 +120,7 @@ PORT=3000
 NODE_ENV=development
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.o2zrfpm.mongodb.net/loto_ai?retryWrites=true&w=majority&appName=Cluster0
 LOTTERY_SOURCE_BASE_URL=https://xskt.com.vn
-XSKT_XSMB_DAILY_URL_TEMPLATE=https://xskt.net/xsmb/{dd}-{mm}-{yyyy}
+XSMB_DAILY_URL_TEMPLATE=https://xoso.com.vn/xsmb-{dd}-{mm}-{yyyy}.html
 LOTTERY_FETCH_TIMEOUT_MS=25000
 ```
 
@@ -142,7 +142,15 @@ npm run import:xsmn:200 -- 200 2026-06-19
 npm run import:xsmt:200 -- 200 2026-06-19
 npm run stats:last2 -- --region mien-bac --days 30 --limit 10
 npm run stats:last3 -- --province xsmb --days 30 --limit 10
+npm run predict:da-so:mien-bac -- --history-days 365 --number-top 5 --candidate-pool 20 --pair-top 10
+npm run backtest:da-so:mien-bac -- --history-days 365 --test-days 60 --pair-top 10
+npm run evaluate:da-so:mien-bac -- 2026-08-13
+npm run learn:da-so:mien-bac -- --history-days 365 --backtest-days 60 --learning-rate 0.25
 ```
+
+The Mien Bac `last2` da-so command selects five numbers jointly and ranks their ten unordered pairs. Its transparent ranking formula combines individual Bayesian/soi-cau strength (40%), Bayesian-smoothed long-term co-occurrence (35%), recent 30-draw co-occurrence (15%), and association lift (10%). This is a ranking score, not a guaranteed win probability. Use the walk-forward backtest and random baseline before changing production settings.
+
+The normal prediction job saves a versioned da-so snapshot for the target date. After results are imported, `job:post-result:mien-bac` evaluates whether both numbers in each pair occurred, saves hit pairs and random-baseline metrics, then runs slow weight learning. Learning uses a 60-day walk-forward grid and moves only 25% toward the best weight set. After at least 14 live evaluations, updates are blocked whenever live average pair hits fall below the corresponding random baseline. Da-so snapshots, evaluations, and weights use separate MongoDB collections so they do not mix with Prediction or Blend history.
 
 ## GitHub Actions Setup
 
@@ -155,7 +163,7 @@ Required secret:
 Optional repository variables:
 
 - `LOTTERY_SOURCE_BASE_URL`
-- `XSKT_XSMB_DAILY_URL_TEMPLATE`
+- `XSMB_DAILY_URL_TEMPLATE`
 - `LOTTERY_FETCH_TIMEOUT_MS`
 
 The scheduled job runs at `30 12 * * *`, which is 19:30 Vietnam time.

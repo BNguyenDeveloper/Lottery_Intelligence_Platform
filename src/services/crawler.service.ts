@@ -103,7 +103,7 @@ export class XsktCrawlerService implements LotteryCrawler {
 
     const sourceUrl = this.buildProvinceUrl(date, province.sourcePath ?? province.code);
     let resolvedSourceUrl = sourceUrl;
-    let source = 'xskt.net';
+    let source = new URL(sourceUrl).hostname.replace(/^www\./, '');
     let html: string;
 
     try {
@@ -138,7 +138,7 @@ export class XsktCrawlerService implements LotteryCrawler {
     const { dd, mm, yyyy } = toXsktDateParts(date);
 
     if (sourcePath === 'xsmb') {
-      return env.xsktXsmbDailyUrlTemplate
+      return env.xsmbDailyUrlTemplate
         .replace('{dd}', dd)
         .replace('{mm}', mm)
         .replace('{yyyy}', yyyy);
@@ -154,11 +154,7 @@ export class XsktCrawlerService implements LotteryCrawler {
 
   private buildRegionUrl(date: string, region: Exclude<RegionCode, 'mien-bac'>): string {
     const { dd, mm, yyyy } = toXsktDateParts(date);
-    const sampleXsmbUrl = env.xsktXsmbDailyUrlTemplate
-      .replace('{dd}', dd)
-      .replace('{mm}', mm)
-      .replace('{yyyy}', yyyy);
-    const origin = new URL(sampleXsmbUrl).origin;
+    const origin = new URL(env.lotterySourceBaseUrl).origin;
     const path = region === 'mien-nam' ? 'xsmn' : 'xsmt';
     return `${origin}/${path}/${dd}-${mm}-${yyyy}`;
   }

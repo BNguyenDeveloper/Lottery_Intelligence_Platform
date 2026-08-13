@@ -22,6 +22,14 @@ const PRIZE_LABELS: Record<string, PrizeCode> = {
   G6: 'g6',
   G7: 'g7',
   G8: 'g8',
+  '1': 'g1',
+  '2': 'g2',
+  '3': 'g3',
+  '4': 'g4',
+  '5': 'g5',
+  '6': 'g6',
+  '7': 'g7',
+  '8': 'g8',
 };
 
 const PRIZE_WIDTHS: Record<PrizeCode, number> = {
@@ -85,6 +93,23 @@ function findResultTable($: cheerio.CheerioAPI, requireG8: boolean) {
 export function parsePrizeResults(html: string): LotteryPrizeResults {
   const $ = cheerio.load(html);
   const results = emptyPrizeResults();
+  const xosoResultTable = $('table.table-result').first();
+
+  if (xosoResultTable.length > 0) {
+    xosoResultTable.find('tr').each((_, row) => {
+      const cells = $(row).find('th,td').toArray();
+      const prize = PRIZE_LABELS[normalizeLabel($(cells[0]).text())];
+
+      if (!prize || cells.length < 2) {
+        return;
+      }
+
+      results[prize].push(...extractPrizeNumbers($(cells.slice(1)).text(), prize));
+    });
+
+    return results;
+  }
+
   const resultTable = findResultTable($, false);
 
   if (!resultTable) {
