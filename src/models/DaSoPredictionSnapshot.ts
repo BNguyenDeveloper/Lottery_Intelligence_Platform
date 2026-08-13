@@ -1,0 +1,10 @@
+import { HydratedDocument, Schema, model } from 'mongoose';
+
+export interface DaSoSnapshotPair { rank: number; pair: string; numberA: string; numberB: string; score: string; individualScore: string; coOccurrenceScore: string; recentCoOccurrenceScore: string; liftScore: string; estimatedPairRate: string; associationLift: string; }
+export interface DaSoPredictionSnapshotShape { predictionDate: string; targetDate: string; region: 'mien-bac'; province: 'xsmb'; target: 'last2'; modelVersion: string; selectedNumbers: string[]; pairs: DaSoSnapshotPair[]; formula: string; weights: { individual: number; coOccurrence: number; recentCoOccurrence: number; associationLift: number }; createdAt: Date; updatedAt: Date; }
+
+const pairSchema = new Schema<DaSoSnapshotPair>({ rank: Number, pair: String, numberA: String, numberB: String, score: String, individualScore: String, coOccurrenceScore: String, recentCoOccurrenceScore: String, liftScore: String, estimatedPairRate: String, associationLift: String }, { _id: false });
+const schema = new Schema<DaSoPredictionSnapshotShape>({ predictionDate: { type: String, required: true }, targetDate: { type: String, required: true }, region: { type: String, enum: ['mien-bac'], required: true }, province: { type: String, enum: ['xsmb'], required: true }, target: { type: String, enum: ['last2'], required: true }, modelVersion: { type: String, required: true }, selectedNumbers: { type: [String], required: true }, pairs: { type: [pairSchema], required: true }, formula: { type: String, required: true }, weights: { individual: { type: Number, required: true }, coOccurrence: { type: Number, required: true }, recentCoOccurrence: { type: Number, required: true }, associationLift: { type: Number, required: true } } }, { timestamps: true });
+schema.index({ targetDate: 1, modelVersion: 1 }, { unique: true });
+export type DaSoPredictionSnapshotDocument = HydratedDocument<DaSoPredictionSnapshotShape>;
+export const DaSoPredictionSnapshotModel = model<DaSoPredictionSnapshotShape>('DaSoPredictionSnapshot', schema, 'da_so_prediction_snapshots');

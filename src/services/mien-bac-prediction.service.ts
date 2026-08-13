@@ -151,13 +151,13 @@ interface HistoryRow {
   last3?: string;
 }
 
-interface DailyHits {
+export interface DailyHits {
   date: string;
   dayOfWeek: number;
   values: Set<string>;
 }
 
-interface ScoredCandidate {
+export interface ScoredCandidate {
   number: string;
   count: number;
   lastSeenDate: string;
@@ -711,7 +711,7 @@ export async function predictMienBacNumbers(options: MienBacPredictionOptions): 
     }));
 }
 
-function rankCandidates(
+export function rankCandidates(
   candidates: string[],
   dailyHits: DailyHits[],
   top: number,
@@ -749,7 +749,7 @@ function buildDailyHits(rows: HistoryRow[], target: PredictionTarget): DailyHits
     }));
 }
 
-function buildCandidates(target: PredictionTarget): string[] {
+export function buildCandidates(target: PredictionTarget): string[] {
   const width = target === 'last2' ? 2 : 3;
   const count = target === 'last2' ? 100 : 1000;
   return Array.from({ length: count }, (_, index) => index.toString().padStart(width, '0'));
@@ -833,7 +833,7 @@ function calculateBayesianProbabilityScore(
   );
 }
 
-function pickBayesianWeights(weights: PredictionLearningWeights): BayesianPredictionWeights {
+export function pickBayesianWeights(weights: PredictionLearningWeights): BayesianPredictionWeights {
   return {
     bayesianLongTermWeight: weights.bayesianLongTermWeight,
     bayesianMediumTermWeight: weights.bayesianMediumTermWeight,

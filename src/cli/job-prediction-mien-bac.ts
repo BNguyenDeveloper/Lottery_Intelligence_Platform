@@ -7,6 +7,8 @@ import {
   predictMienBacNumbers,
 } from '../services/mien-bac-prediction.service';
 import { getMienBacMissingHeadFollowUp } from '../services/mien-bac-missing-head-follow-up.service';
+import { getMienBacDaSoPrediction, MienBacDaSoPrediction } from '../services/mien-bac-da-so.service';
+import { saveMienBacDaSoSnapshot } from '../services/da-so-snapshot.service';
 import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snapshot.service';
 import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from '../services/prediction-learning-weight.service';
 import { getRecentLast2Summary } from '../services/recent-last2-summary.service';
@@ -90,6 +92,7 @@ async function main(): Promise<void> {
       : [];
   const recentSummaryRows = await getRecentSummaryRows(recentSummaryDays, recentSummaryTop);
   const missingHeadRows = await getMissingHeadRows(missingHeadTop);
+  const daSo = target === 'last2' ? await getDaSoPrediction(historyDays) : undefined;
 
   if (rows.length === 0) {
     logger.warn('No Mien Bac prediction rows found', { target, historyDays, top });
@@ -144,6 +147,14 @@ async function main(): Promise<void> {
     console.log('Mien Bac Missing Head Follow-up');
     console.table(missingHeadRows);
   }
+  if (daSo) {
+    await saveDaSoSnapshot(targetDate, daSo, predictionDate);
+    console.log('Da So - Selected 5 Numbers (reference only)');
+    console.table(daSo.numbers);
+    console.log('Da So - Ranked Pairs');
+    console.table(daSo.pairs);
+    console.log(`Formula: ${daSo.formula}`);
+  }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
   logger.info('Mien Bac prediction completed', {
@@ -158,6 +169,7 @@ async function main(): Promise<void> {
     blendRows: blendRows.length,
     recentSummaryRows: recentSummaryRows.length,
     missingHeadRows: missingHeadRows.length,
+    daSoPairs: daSo?.pairs.length ?? 0,
   });
 
   const emailStatus = getEmailConfigStatus();
@@ -168,8 +180,8 @@ async function main(): Promise<void> {
 
   await sendEmail({
     subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows),
+    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo),
+    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo),
   });
   logger.info('Mien Bac prediction email sent successfully.');
 }
@@ -192,6 +204,30 @@ async function getMissingHeadRows(topPerHead: number): ReturnType<typeof getMien
   }
 }
 
+async function getDaSoPrediction(historyDays: number): Promise<MienBacDaSoPrediction | undefined> {
+  try {
+    return await getMienBacDaSoPrediction({ historyDays, numberTop: 5, candidatePool: 20, pairTop: 10 });
+  } catch (error) {
+    logger.warn('Mien Bac da so prediction skipped', { error: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  }
+}
+
+async function saveDaSoSnapshot(
+  targetDate: string,
+  prediction: MienBacDaSoPrediction,
+  predictionDate: string,
+): Promise<void> {
+  try {
+    await saveMienBacDaSoSnapshot(targetDate, prediction, predictionDate);
+  } catch (error) {
+    logger.warn('Mien Bac da so snapshot save skipped', {
+      targetDate,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function buildPredictionEmailText(
   summary: string,
   target: PredictionTarget,
@@ -201,6 +237,7 @@ function buildPredictionEmailText(
   blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
   recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
   missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
+  daSo: MienBacDaSoPrediction | undefined,
 ): string {
   const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
   const predictionBody = rows.map((row) =>
@@ -276,6 +313,16 @@ function buildPredictionEmailText(
       `latestDate=${row.latestDate}`,
     ].join(' | '),
   );
+  const daSoBody = daSo
+    ? [
+        '',
+        'Da So - Reference Only',
+        `Selected numbers: ${daSo.numbers.map((row) => row.number).join(', ')}`,
+        `Formula: ${daSo.formula}`,
+        'Backtest is variable across time blocks; ranking score is not a guaranteed probability.',
+        ...daSo.pairs.map((row) => `#${row.rank} | pair=${row.pair} | score=${row.score} | individual=${row.individualScore} | coOccurrence=${row.coOccurrenceScore} | recentCoOccurrence=${row.recentCoOccurrenceScore} | lift=${row.associationLift} | estimatedPairRate=${row.estimatedPairRate}`),
+      ]
+    : [];
 
   return [
     ...header,
@@ -290,6 +337,7 @@ function buildPredictionEmailText(
     ...recentSummaryBody,
     ...missingHeadHeader,
     ...missingHeadBody,
+    ...daSoBody,
   ].join('\n');
 }
 
@@ -302,6 +350,7 @@ function buildPredictionEmailHtml(
   blendRows: Awaited<ReturnType<typeof getMienBacLast2PredictionTrendBlend>>,
   recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
   missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
+  daSo: MienBacDaSoPrediction | undefined,
 ): string {
   const tableRows = rows
     .map(
@@ -472,6 +521,14 @@ function buildPredictionEmailHtml(
       <tbody>${missingHeadTableRows}</tbody>
     </table>`
       : '';
+  const daSoSection = daSo
+    ? `<h3>Da So - Reference Only</h3>
+    <p>Selected numbers: <strong>${escapeHtml(daSo.numbers.map((row) => row.number).join(', '))}</strong><br>
+    Formula: ${escapeHtml(daSo.formula)}<br>
+    Backtest varies across time blocks; ranking score is not a guaranteed probability.</p>
+    <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Pair</th><th>Score</th><th>Individual</th><th>Co-occurrence</th><th>Recent</th><th>Lift</th><th>Estimated rate</th></tr></thead>
+    <tbody>${daSo.pairs.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.pair)}</strong></td><td>${row.score}</td><td>${row.individualScore}</td><td>${row.coOccurrenceScore}</td><td>${row.recentCoOccurrenceScore}</td><td>${row.associationLift}</td><td>${row.estimatedPairRate}</td></tr>`).join('')}</tbody></table>`
+    : '';
 
   return `<!doctype html>
 <html>
@@ -509,6 +566,7 @@ function buildPredictionEmailHtml(
     ${blendSection}
     ${recentSummarySection}
     ${missingHeadSection}
+    ${daSoSection}
   </body>
 </html>`;
 }
