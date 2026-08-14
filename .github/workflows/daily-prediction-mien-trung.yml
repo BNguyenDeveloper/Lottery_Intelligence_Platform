@@ -16,9 +16,16 @@ jobs:
     env:
       NODE_ENV: production
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      LOTTERY_SOURCE_BASE_URL: https://xskt.com.vn
       MIEN_TRUNG_PREDICTION_HISTORY_DAYS: ${{ vars.MIEN_TRUNG_PREDICTION_HISTORY_DAYS || '730' }}
       MIEN_TRUNG_PREDICTION_TOP: ${{ vars.MIEN_TRUNG_PREDICTION_TOP || '5' }}
       MIEN_TRUNG_PREDICTION_TARGET_DATE: ${{ inputs.target_date || '' }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SMTP_USER: ${{ vars.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+      EMAIL_TO: ${{ vars.EMAIL_TO }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -31,5 +38,13 @@ jobs:
         run: npm ci --include=dev
       - name: Build
         run: npm run build
+      - name: Check email configuration
+        run: |
+          [ -n "$SMTP_HOST" ] && echo "SMTP_HOST configured: yes" || echo "SMTP_HOST configured: no"
+          [ -n "$SMTP_PORT" ] && echo "SMTP_PORT configured: yes" || echo "SMTP_PORT configured: no"
+          [ -n "$SMTP_USER" ] && echo "SMTP_USER configured: yes" || echo "SMTP_USER configured: no"
+          [ -n "$SMTP_PASS" ] && echo "SMTP_PASS configured: yes" || echo "SMTP_PASS configured: no"
+          [ -n "$EMAIL_FROM" ] && echo "EMAIL_FROM configured: yes" || echo "EMAIL_FROM configured: no"
+          [ -n "$EMAIL_TO" ] && echo "EMAIL_TO configured: yes" || echo "EMAIL_TO configured: no"
       - name: Predict scheduled Mien Trung provinces and save snapshots
         run: npm run job:prediction:mien-trung -- --top 5
