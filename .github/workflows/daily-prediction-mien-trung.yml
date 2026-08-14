@@ -1,0 +1,35 @@
+name: Daily Mien Trung Prediction
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # 16:00 Vietnam time, before Mien Trung draw
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: Optional target date (YYYY-MM-DD)
+        required: false
+        type: string
+
+jobs:
+  predict-mien-trung:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MIEN_TRUNG_PREDICTION_HISTORY_DAYS: ${{ vars.MIEN_TRUNG_PREDICTION_HISTORY_DAYS || '730' }}
+      MIEN_TRUNG_PREDICTION_TOP: ${{ vars.MIEN_TRUNG_PREDICTION_TOP || '5' }}
+      MIEN_TRUNG_PREDICTION_TARGET_DATE: ${{ inputs.target_date || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Build
+        run: npm run build
+      - name: Predict scheduled Mien Trung provinces and save snapshots
+        run: npm run job:prediction:mien-trung -- --top 5
