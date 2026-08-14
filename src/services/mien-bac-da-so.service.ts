@@ -16,6 +16,8 @@ export interface MienBacDaSoOptions {
   pairTop?: number;
   throughDate?: string;
   weights?: DaSoWeights;
+  predictionWeights?: ReturnType<typeof pickBayesianWeights>;
+  targetDate?: string;
 }
 
 export interface DaSoWeights { individual: number; coOccurrence: number; recentCoOccurrence: number; associationLift: number; }
@@ -127,6 +129,18 @@ export async function getMienBacDaSoPrediction(options: MienBacDaSoOptions): Pro
   return formatPrediction(latest.date, dailyHits.length, resolvedOptions, selection);
 }
 
+export async function buildDaSoPredictionFromDailyHits(
+  dailyHits: DailyHits[],
+  throughDate: string,
+  options: MienBacDaSoOptions,
+): Promise<MienBacDaSoPrediction | undefined> {
+  validateOptions(options);
+  if (dailyHits.length === 0) return undefined;
+  const resolvedOptions = { ...options, weights: options.weights ?? DEFAULT_DA_SO_WEIGHTS };
+  const selection = await rankSelection(dailyHits, resolvedOptions);
+  return formatPrediction(throughDate, dailyHits.length, resolvedOptions, selection);
+}
+
 export async function backtestMienBacDaSo(options: MienBacDaSoOptions & { testDays: number }): Promise<MienBacDaSoBacktestResult | undefined> {
   validateOptions(options);
   if (!Number.isInteger(options.testDays) || options.testDays <= 0) throw new Error('testDays must be a positive integer.');
@@ -200,8 +214,16 @@ export async function backtestMienBacDaSo(options: MienBacDaSoOptions & { testDa
 async function rankSelection(dailyHits: DailyHits[], options: MienBacDaSoOptions): Promise<RankedSelection> {
   const numberTop = options.numberTop ?? 5;
   const candidatePool = Math.max(numberTop, options.candidatePool ?? 20);
-  const learnedWeights = await getLatestPredictionLearningWeights();
-  const pool = rankCandidates(buildCandidates('last2'), dailyHits, candidatePool, pickBayesianWeights(learnedWeights));
+  const predictionWeights = options.predictionWeights
+    ?? pickBayesianWeights(await getLatestPredictionLearningWeights());
+  const pool = rankCandidates(
+    buildCandidates('last2'),
+    dailyHits,
+    candidatePool,
+    predictionWeights,
+    0.05,
+    options.targetDate,
+  );
   const normalized = normalizeCandidateScores(pool);
   const weights = options.weights ?? await getLatestDaSoWeights();
   const allPairs = buildPairScores(pool, normalized, dailyHits, weights);

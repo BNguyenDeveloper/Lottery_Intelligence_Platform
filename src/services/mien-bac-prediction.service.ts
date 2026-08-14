@@ -717,9 +717,10 @@ export function rankCandidates(
   top: number,
   weights: BayesianPredictionWeights = pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS),
   soiCauWeight = DEFAULT_SOI_CAU_WEIGHT,
+  targetDate?: string,
 ): ScoredCandidate[] {
   return candidates
-    .map((candidate) => scoreCandidate(candidate, dailyHits, weights, soiCauWeight))
+    .map((candidate) => scoreCandidate(candidate, dailyHits, weights, soiCauWeight, targetDate))
     .sort((left, right) => right.score - left.score || right.count - left.count || left.number.localeCompare(right.number))
     .slice(0, top);
 }
@@ -760,9 +761,10 @@ function scoreCandidate(
   dailyHits: DailyHits[],
   weights: BayesianPredictionWeights,
   soiCauWeight: number,
+  targetDate?: string,
 ): ScoredCandidate {
-  const signals = calculateCandidateSignals(candidate, dailyHits);
-  const bayesianScore = calculateBayesianProbabilityScore(candidate, dailyHits, weights);
+  const signals = calculateCandidateSignals(candidate, dailyHits, targetDate);
+  const bayesianScore = calculateBayesianProbabilityScore(candidate, dailyHits, weights, targetDate);
   const repeatPenalty = calculateRepeatPenalty(signals.gapDays);
   const safeSoiCauWeight = clamp(soiCauWeight, 0, 1);
   const soiCauAdjustment = 1 + safeSoiCauWeight * (signals.soiCauScore - 0.5) * 2;
@@ -802,6 +804,7 @@ function calculateBayesianProbabilityScore(
   candidate: string,
   dailyHits: DailyHits[],
   weights: BayesianPredictionWeights,
+  targetDate?: string,
 ): number {
   const totalDays = dailyHits.length;
   const universeSize = inferUniverseSize(candidate);
@@ -811,7 +814,7 @@ function calculateBayesianProbabilityScore(
     0.95,
   );
   const latestDate = dailyHits[dailyHits.length - 1].date;
-  const tomorrowDayOfWeek = new Date(`${shiftDate(latestDate, 1)}T00:00:00.000Z`).getUTCDay();
+  const tomorrowDayOfWeek = new Date(`${targetDate ?? shiftDate(latestDate, 1)}T00:00:00.000Z`).getUTCDay();
   const matchingWeekdays = dailyHits.filter((day) => day.dayOfWeek === tomorrowDayOfWeek);
 
   const probabilitySignals: ProbabilitySignals = {
@@ -854,6 +857,7 @@ function inferUniverseSize(candidate: string): number {
 function calculateCandidateSignals(
   candidate: string,
   dailyHits: DailyHits[],
+  targetDate?: string,
 ): Omit<ScoredCandidate, 'score' | 'repeatPenalty'> {
   const totalDays = dailyHits.length;
   const recentWindow = Math.min(30, totalDays);
@@ -866,14 +870,14 @@ function calculateCandidateSignals(
   const recentCount = countHits(candidate, recentDays);
   const olderCount = countHits(candidate, olderDays);
   const lastSeenDate = findLastSeenDate(candidate, dailyHits);
-  const gapDays = lastSeenDate ? diffDays(latestDay.date, lastSeenDate) : totalDays;
+  const gapDays = lastSeenDate ? diffDays(targetDate ?? latestDay.date, lastSeenDate) : totalDays;
 
   const frequencyScore = normalize(count / totalDays, 0.45);
   const recentScore = normalize(recentCount / recentWindow, 0.55);
   const trendScore = clamp((recentCount / recentWindow - olderCount / Math.max(olderDays.length, 1)) / 0.5 + 0.5, 0, 1);
   const recencyScore = calculateNextDayReadinessScore(gapDays);
   const gapScore = 1 - Math.exp(-gapDays / 28);
-  const weekdayScore = calculateWeekdayScore(candidate, dailyHits, latestDay.date);
+  const weekdayScore = calculateWeekdayScore(candidate, dailyHits, latestDay.date, targetDate);
   const markovScore = calculateMarkovScore(candidate, dailyHits, latestValues);
   const reverseScore = calculateReverseScore(candidate, dailyHits);
   const cycleScore = calculateCycleScore(candidate, dailyHits, gapDays);
@@ -974,8 +978,8 @@ function calculateNextDayReadinessScore(gapDays: number): number {
   return clamp(Math.exp(-((gapDays - idealGapDays) ** 2) / (2 * spread * spread)), 0, 1);
 }
 
-function calculateWeekdayScore(candidate: string, dailyHits: DailyHits[], latestDate: string): number {
-  const tomorrow = shiftDate(latestDate, 1);
+function calculateWeekdayScore(candidate: string, dailyHits: DailyHits[], latestDate: string, targetDate?: string): number {
+  const tomorrow = targetDate ?? shiftDate(latestDate, 1);
   const targetDayOfWeek = new Date(`${tomorrow}T00:00:00.000Z`).getUTCDay();
   const matchingDays = dailyHits.filter((day) => day.dayOfWeek === targetDayOfWeek);
 
