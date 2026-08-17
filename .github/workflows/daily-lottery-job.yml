@@ -2,14 +2,12 @@ name: Daily Lottery Job
 
 on:
   schedule:
-    - cron: '35 9 * * *' # 16:35 Vietnam time - Mien Nam
-    - cron: '35 10 * * *' # 17:35 Vietnam time - Mien Trung
-    - cron: '35 11 * * *' # 18:35 Vietnam time - Mien Bac
+    - cron: '45 11 * * *' # 18:45 Vietnam time - all regions
   workflow_dispatch:
 
 jobs:
   daily-mien-bac:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 11 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -43,7 +41,7 @@ jobs:
         run: npm run job:post-result:mien-bac
 
   daily-mien-trung:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 10 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 11 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -74,7 +72,7 @@ jobs:
         run: npm run job:mien-trung
 
   daily-mien-nam:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 9 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 11 * * *'
     runs-on: ubuntu-latest
 
     env:
