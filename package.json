@@ -15,6 +15,8 @@
     "job:mien-nam": "tsx src/cli/job-region.ts mien-nam",
     "job:prediction:mien-bac": "tsx src/cli/job-prediction-mien-bac.ts",
     "job:prediction:mien-trung": "tsx src/cli/job-prediction-mien-trung.ts",
+    "predict:special-last3:mien-trung": "tsx src/cli/predict-special-last3-mien-trung.ts",
+    "backtest:special-last3:mien-trung": "tsx src/cli/backtest-special-last3-mien-trung.ts",
     "job:post-result:mien-bac": "tsx src/cli/job-post-result-mien-bac.ts",
     "learn:prediction:mien-bac": "tsx src/cli/update-prediction-learning-mien-bac.ts",
     "evaluate:prediction:mien-bac": "tsx src/cli/evaluate-prediction-mien-bac.ts",

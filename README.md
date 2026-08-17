@@ -142,6 +142,8 @@ npm run import:xsmn:200 -- 200 2026-06-19
 npm run import:xsmt:200 -- 200 2026-06-19
 npm run stats:last2 -- --region mien-bac --days 30 --limit 10
 npm run stats:last3 -- --province xsmb --days 30 --limit 10
+npm run predict:special-last3:mien-trung -- --target-date 2026-08-18 --history-days 1825
+npm run backtest:special-last3:mien-trung -- --province phu-yen --test-draws 26 --history-days 1825
 npm run predict:da-so:mien-bac -- --history-days 365 --number-top 5 --candidate-pool 20 --pair-top 10
 npm run backtest:da-so:mien-bac -- --history-days 365 --test-days 60 --pair-top 10
 npm run evaluate:da-so:mien-bac -- 2026-08-13
@@ -149,6 +151,8 @@ npm run learn:da-so:mien-bac -- --history-days 365 --backtest-days 60 --learning
 ```
 
 The Mien Bac `last2` da-so command selects five numbers jointly and ranks their ten unordered pairs. Its transparent ranking formula combines individual Bayesian/soi-cau strength (40%), Bayesian-smoothed long-term co-occurrence (35%), recent 30-draw co-occurrence (15%), and association lift (10%). This is a ranking score, not a guaranteed win probability. Use the walk-forward backtest and random baseline before changing production settings.
+
+The Mien Trung special-last3 command predicts exactly one `000-999` number for each province scheduled on the target date. Its label is only the final three digits of `results.db[0]`; other prizes are excluded. The isolated hierarchical Bayesian score is `40% regional + 35% province + 15% multi-window trend + 10% digit transition`. Predictions are versioned in `mien_trung_special_last3_prediction_snapshots` and are included as a separate `Special Last3 - One Number` section in the existing scheduled Mien Trung email. Use the walk-forward backtest before relying on it; a random Top-1 baseline is `0.1%` per draw and historical ranking scores are not guaranteed probabilities.
 
 The normal prediction job saves a versioned da-so snapshot for the target date. After results are imported, `job:post-result:mien-bac` evaluates whether both numbers in each pair occurred, saves hit pairs and random-baseline metrics, then runs slow weight learning. Learning uses a 60-day walk-forward grid and moves only 25% toward the best weight set. After at least 14 live evaluations, updates are blocked whenever live average pair hits fall below the corresponding random baseline. Da-so snapshots, evaluations, and weights use separate MongoDB collections so they do not mix with Prediction or Blend history.
 
@@ -166,7 +170,7 @@ Optional repository variables:
 - `XSMB_DAILY_URL_TEMPLATE`
 - `LOTTERY_FETCH_TIMEOUT_MS`
 
-The scheduled job runs at `30 12 * * *`, which is 19:30 Vietnam time.
+The regional import workflow runs daily at `45 11 * * *` (18:45 Vietnam time). The Mien Bac and Mien Trung prediction workflows run daily at `0 13 * * *` (20:00 Vietnam time) and predict the next Vietnam calendar date by default; manual `--target-date`/workflow input still overrides that date.
 
 ## Crawler Architecture
 

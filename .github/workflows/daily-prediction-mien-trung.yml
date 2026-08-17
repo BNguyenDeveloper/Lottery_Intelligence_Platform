@@ -2,7 +2,7 @@ name: Daily Mien Trung Prediction
 
 on:
   schedule:
-    - cron: '0 9 * * *' # 16:00 Vietnam time, before Mien Trung draw
+    - cron: '0 13 * * *' # 20:00 Vietnam time, after the 18:45 import jobs
   workflow_dispatch:
     inputs:
       target_date:

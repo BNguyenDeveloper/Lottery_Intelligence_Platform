@@ -9,11 +9,17 @@ import { saveMienTrungDaSoSnapshot } from '../services/mien-trung-da-so-snapshot
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 import { MienBacDaSoPrediction } from '../services/mien-bac-da-so.service';
+import {
+  MienTrungSpecialLast3Prediction,
+  predictMienTrungProvinceSpecialLast3,
+} from '../services/mien-trung-special-last3.service';
+import { saveMienTrungSpecialLast3Snapshot } from '../services/mien-trung-special-last3-snapshot.service';
 
 interface ProvincePrediction {
   province: string;
   rows: Awaited<ReturnType<typeof predictMienTrungProvinceLast2>>;
   daSo?: MienBacDaSoPrediction;
+  specialLast3?: MienTrungSpecialLast3Prediction;
 }
 
 function option(name: string): string | undefined {
@@ -23,7 +29,7 @@ function option(name: string): string | undefined {
 
 async function main(): Promise<void> {
   const predictionDate = getVietnamDateString();
-  const targetDate = option('target-date') || process.env.MIEN_TRUNG_PREDICTION_TARGET_DATE || predictionDate;
+  const targetDate = option('target-date') || process.env.MIEN_TRUNG_PREDICTION_TARGET_DATE || shiftDate(predictionDate, 1);
   const historyDays = Number(option('history-days') ?? process.env.MIEN_TRUNG_PREDICTION_HISTORY_DAYS ?? 730);
   const top = Number(option('top') ?? process.env.MIEN_TRUNG_PREDICTION_TOP ?? 5);
   const provinces = getScheduledProvinces('mien-trung', targetDate) ?? [];
@@ -53,7 +59,15 @@ async function main(): Promise<void> {
         console.table(daSo.pairs);
         console.log(`Formula: ${daSo.formula}`);
       }
-      results.push({ province, rows, daSo });
+      const specialLast3 = await predictMienTrungProvinceSpecialLast3({ province, targetDate, historyDays });
+      if (specialLast3) {
+        await saveMienTrungSpecialLast3Snapshot(predictionDate, specialLast3);
+        console.log(`Mien Trung special last3: ${province} (${targetDate})`);
+        console.table([specialLast3]);
+      } else {
+        logger.warn('No Mien Trung special-last3 prediction history found', { province, targetDate });
+      }
+      results.push({ province, rows, daSo, specialLast3 });
     }
     logger.info('Mien Trung scheduled prediction completed', { predictionDate, targetDate, provinces, top });
     await sendPredictionEmail(predictionDate, targetDate, historyDays, results);
@@ -113,6 +127,15 @@ function buildEmailText(
         `Formula: ${result.daSo.formula}`,
         ...result.daSo.pairs.map((row) => `#${row.rank} | pair=${row.pair} | score=${row.score} | individual=${row.individualScore} | coOccurrence=${row.coOccurrenceScore} | recentCoOccurrence=${row.recentCoOccurrenceScore} | lift=${row.associationLift}`),
       ] : []),
+      ...(result.specialLast3 ? [
+        '',
+        'Special Last3 - One Number',
+        `Number: ${result.specialLast3.number}`,
+        `Score: ${result.specialLast3.score} | regional=${result.specialLast3.regionalScore} | province=${result.specialLast3.provinceScore} | trend=${result.specialLast3.trendScore} | transition=${result.specialLast3.transitionScore}`,
+        `Samples: province=${result.specialLast3.provinceDraws} | regional=${result.specialLast3.regionalDraws}`,
+        `Formula: ${result.specialLast3.formula}`,
+        'Random Top-1 baseline is 0.1% per draw; this ranking is not a guaranteed probability.',
+      ] : []),
     ]),
   ].join('\n');
 }
@@ -129,10 +152,15 @@ function buildEmailHtml(
       <p><strong>Selected numbers:</strong> ${result.daSo.numbers.map((row) => escapeHtml(row.number)).join(', ')}</p>
       <p><strong>Formula:</strong> ${escapeHtml(result.daSo.formula)}</p>
       <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Pair</th><th>Score</th><th>Individual</th><th>Co-occurrence</th><th>Recent</th><th>Lift</th></tr></thead><tbody>${result.daSo.pairs.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.pair)}</strong></td><td>${escapeHtml(row.score)}</td><td>${escapeHtml(row.individualScore)}</td><td>${escapeHtml(row.coOccurrenceScore)}</td><td>${escapeHtml(row.recentCoOccurrenceScore)}</td><td>${escapeHtml(row.associationLift)}</td></tr>`).join('')}</tbody></table>` : '';
+    const specialLast3Section = result.specialLast3 ? `<h3>Special Last3 - One Number</h3>
+      <p><strong>Number:</strong> ${escapeHtml(result.specialLast3.number)}</p>
+      <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Score</th><th>Regional</th><th>Province</th><th>Trend</th><th>Transition</th><th>Province draws</th><th>Regional draws</th></tr></thead><tbody><tr><td>${escapeHtml(result.specialLast3.score)}</td><td>${escapeHtml(result.specialLast3.regionalScore)}</td><td>${escapeHtml(result.specialLast3.provinceScore)}</td><td>${escapeHtml(result.specialLast3.trendScore)}</td><td>${escapeHtml(result.specialLast3.transitionScore)}</td><td>${result.specialLast3.provinceDraws}</td><td>${result.specialLast3.regionalDraws}</td></tr></tbody></table>
+      <p><strong>Formula:</strong> ${escapeHtml(result.specialLast3.formula)}<br>Random Top-1 baseline is 0.1% per draw; this ranking is not a guaranteed probability.</p>` : '';
     return `<h2>${escapeHtml(provinceName(result.province))}</h2>
       <h3>Prediction - Top 5</h3>
       <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Count</th><th>Gap days</th><th>Weekday</th><th>Soi cau</th></tr></thead><tbody>${predictionRows}</tbody></table>
-      ${daSoSection}`;
+      ${daSoSection}
+      ${specialLast3Section}`;
   }).join('');
   return `<h1>Mien Trung scheduled prediction</h1>
     <p><strong>Prediction date:</strong> ${escapeHtml(predictionDate)}<br><strong>Target date:</strong> ${escapeHtml(targetDate)}<br><strong>History days:</strong> ${historyDays}</p>
@@ -145,6 +173,12 @@ function provinceName(province: string): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function shiftDate(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
 }
 
 main().catch((error) => {
