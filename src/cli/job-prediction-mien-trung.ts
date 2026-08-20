@@ -4,7 +4,7 @@ import { getProvince } from '../constants/provinces';
 import { getEmailConfigStatus, sendEmail } from '../services/email.service';
 import { predictMienTrungProvinceLast2 } from '../services/mien-trung-prediction.service';
 import { saveMienTrungPredictionSnapshot } from '../services/mien-trung-prediction-snapshot.service';
-import { getMienTrungDaSoPrediction } from '../services/mien-trung-da-so.service';
+import { getMienTrungDaSoPrediction, MIEN_TRUNG_DA_SO_MODEL_VERSION } from '../services/mien-trung-da-so.service';
 import { saveMienTrungDaSoSnapshot } from '../services/mien-trung-da-so-snapshot.service';
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
@@ -92,7 +92,7 @@ async function sendPredictionEmail(
     return;
   }
   await sendEmail({
-    subject: `[LotoAI] Mien Trung prediction ${targetDate}: ${results.map((result) => provinceName(result.province)).join(', ')}`,
+    subject: `[LotoAI][DaSo v3] Mien Trung prediction ${targetDate}: ${results.map((result) => provinceName(result.province)).join(', ')}`,
     text: buildEmailText(predictionDate, targetDate, historyDays, results),
     html: buildEmailHtml(predictionDate, targetDate, historyDays, results),
   });
@@ -123,6 +123,7 @@ function buildEmailText(
       ...(result.daSo ? [
         '',
         'Da So - Reference Only',
+        `Model version: ${MIEN_TRUNG_DA_SO_MODEL_VERSION}`,
         `Selected numbers: ${result.daSo.numbers.map((row) => row.number).join(', ')}`,
         `Formula: ${result.daSo.formula}`,
         ...result.daSo.pairs.map((row) => `#${row.rank} | pair=${row.pair} | score=${row.score} | individual=${row.individualScore} | coOccurrence=${row.coOccurrenceScore} | recentCoOccurrence=${row.recentCoOccurrenceScore} | lift=${row.associationLift}`),
@@ -149,6 +150,7 @@ function buildEmailHtml(
   const sections = results.map((result) => {
     const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.count}</td><td>${row.gapDays}</td><td>${escapeHtml(row.weekdayScore)}</td><td>${escapeHtml(row.soiCauScore)}</td></tr>`).join('');
     const daSoSection = result.daSo ? `<h3>Da So - Reference Only</h3>
+      <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_DA_SO_MODEL_VERSION)}</p>
       <p><strong>Selected numbers:</strong> ${result.daSo.numbers.map((row) => escapeHtml(row.number)).join(', ')}</p>
       <p><strong>Formula:</strong> ${escapeHtml(result.daSo.formula)}</p>
       <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Pair</th><th>Score</th><th>Individual</th><th>Co-occurrence</th><th>Recent</th><th>Lift</th></tr></thead><tbody>${result.daSo.pairs.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.pair)}</strong></td><td>${escapeHtml(row.score)}</td><td>${escapeHtml(row.individualScore)}</td><td>${escapeHtml(row.coOccurrenceScore)}</td><td>${escapeHtml(row.recentCoOccurrenceScore)}</td><td>${escapeHtml(row.associationLift)}</td></tr>`).join('')}</tbody></table>` : '';
