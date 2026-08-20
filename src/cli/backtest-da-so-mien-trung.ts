@@ -6,17 +6,19 @@ import { DaSoWeights } from '../services/mien-bac-da-so.service';
 import { DailyHits, pickBayesianWeights } from '../services/mien-bac-prediction.service';
 import { DEFAULT_PREDICTION_LEARNING_WEIGHTS } from '../services/prediction-learning-weight.service';
 import { logger } from '../utils/logger';
+import { MIEN_TRUNG_DA_SO_CANDIDATE_POOL, MIEN_TRUNG_DA_SO_SELECTION_INDIVIDUAL_WEIGHT, MIEN_TRUNG_DA_SO_WEIGHTS } from '../services/mien-trung-da-so.service';
 
 function option(name: string): string | undefined { const index = process.argv.indexOf(`--${name}`); return index >= 0 ? process.argv[index + 1] : undefined; }
 async function main(): Promise<void> {
   const requestedProvince = option('province');
   const testDraws = Number(option('test-draws') ?? 52);
   const historyDraws = Number(option('history-draws') ?? 156);
-  const candidatePool = Number(option('candidate-pool') ?? 20);
+  const candidatePool = Number(option('candidate-pool') ?? MIEN_TRUNG_DA_SO_CANDIDATE_POOL);
+  const selectionIndividualWeight = Number(option('selection-individual-weight') ?? MIEN_TRUNG_DA_SO_SELECTION_INDIVIDUAL_WEIGHT);
   const throughDate = option('through-date');
   const rawWeights = option('weights');
   const values = rawWeights?.split(',').map(Number);
-  const weights: DaSoWeights | undefined = values?.length === 4 ? { individual: values[0], coOccurrence: values[1], recentCoOccurrence: values[2], associationLift: values[3] } : undefined;
+  const weights: DaSoWeights = values?.length === 4 ? { individual: values[0], coOccurrence: values[1], recentCoOccurrence: values[2], associationLift: values[3] } : MIEN_TRUNG_DA_SO_WEIGHTS;
   await connectDatabase();
   try {
     const query: Record<string, unknown> = throughDate ? { date: { $lte: throughDate } } : {};
@@ -30,7 +32,7 @@ async function main(): Promise<void> {
       let evaluated = 0; let pairHits = 0; let hitDraws = 0; let randomExpected = 0;
       for (let index = Math.max(1, draws.length - testDraws); index < draws.length; index += 1) {
         const training = draws.slice(Math.max(0, index - historyDraws), index);
-        const prediction = await buildDaSoPredictionFromDailyHits(training, training.at(-1)?.date ?? '', { historyDays: historyDraws, numberTop: 5, candidatePool, pairTop: 10, targetDate: draws[index].date, weights, predictionWeights: pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS) });
+        const prediction = await buildDaSoPredictionFromDailyHits(training, training.at(-1)?.date ?? '', { historyDays: historyDraws, numberTop: 5, candidatePool, pairTop: 10, targetDate: draws[index].date, weights, selectionIndividualWeight, predictionWeights: pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS) });
         if (!prediction) continue;
         const hits = prediction.pairs.filter((row) => draws[index].values.has(row.numberA) && draws[index].values.has(row.numberB)).length;
         evaluated += 1; pairHits += hits; if (hits > 0) hitDraws += 1;
