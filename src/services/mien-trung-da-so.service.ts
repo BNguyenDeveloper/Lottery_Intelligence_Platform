@@ -1,10 +1,16 @@
 import { LotteryNumberMienTrungModel } from '../models/LotteryNumber';
-import { buildDaSoPredictionFromDailyHits, MienBacDaSoPrediction } from './mien-bac-da-so.service';
+import { buildDaSoPredictionFromDailyHits, DaSoWeights, MienBacDaSoPrediction } from './mien-bac-da-so.service';
 import { DailyHits, pickBayesianWeights } from './mien-bac-prediction.service';
 import { DEFAULT_PREDICTION_LEARNING_WEIGHTS } from './prediction-learning-weight.service';
 
 interface HistoryRow { date: string; last2: string }
-export const MIEN_TRUNG_DA_SO_MODEL_VERSION = 'mien-trung-last2-da-so-v1';
+export const MIEN_TRUNG_DA_SO_MODEL_VERSION = 'mien-trung-last2-da-so-v2-pair-first';
+export const MIEN_TRUNG_DA_SO_WEIGHTS: DaSoWeights = {
+  individual: 0.2,
+  coOccurrence: 0.5,
+  recentCoOccurrence: 0.2,
+  associationLift: 0.1,
+};
 
 export async function getMienTrungDaSoPrediction(options: {
   province: string;
@@ -32,6 +38,7 @@ export async function getMienTrungDaSoPrediction(options: {
     candidatePool: options.candidatePool ?? 20,
     pairTop: options.pairTop ?? 10,
     targetDate: options.targetDate,
+    weights: MIEN_TRUNG_DA_SO_WEIGHTS,
     predictionWeights: pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS),
   });
 }
