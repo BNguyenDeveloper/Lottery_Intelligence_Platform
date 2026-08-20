@@ -18,6 +18,7 @@ export interface MienBacDaSoOptions {
   weights?: DaSoWeights;
   predictionWeights?: ReturnType<typeof pickBayesianWeights>;
   targetDate?: string;
+  selectionIndividualWeight?: number;
 }
 
 export interface DaSoWeights { individual: number; coOccurrence: number; recentCoOccurrence: number; associationLift: number; }
@@ -234,7 +235,8 @@ async function rankSelection(dailyHits: DailyHits[], options: MienBacDaSoOptions
   forEachCombination(pool, numberTop, (combination) => {
     const individual = average(combination.map((row) => normalized.get(row.number) ?? 0));
     const pairs = pairsFor(combination, pairMap);
-    const score = 0.5 * individual + 0.5 * average(pairs.map((pair) => pair.score));
+    const individualWeight = options.selectionIndividualWeight ?? 0.5;
+    const score = individualWeight * individual + (1 - individualWeight) * average(pairs.map((pair) => pair.score));
     if (score > bestScore) {
       bestScore = score;
       best = combination;
@@ -394,6 +396,7 @@ function validateOptions(options: MienBacDaSoOptions): void {
   }
   if ((options.numberTop ?? 5) < 2) throw new Error('numberTop must be at least 2.');
   if ((options.pairTop ?? 10) > choose2(options.numberTop ?? 5)) throw new Error('pairTop cannot exceed the number of pairs produced by numberTop.');
+  if (options.selectionIndividualWeight !== undefined && (options.selectionIndividualWeight < 0 || options.selectionIndividualWeight > 1)) throw new Error('selectionIndividualWeight must be between 0 and 1.');
   if (options.weights) {
     const total = Object.values(options.weights).reduce((sum, value) => sum + value, 0);
     if (Object.values(options.weights).some((value) => !Number.isFinite(value) || value < 0) || Math.abs(total - 1) > 0.0001) throw new Error('Da so weights must be non-negative and sum to 1.');

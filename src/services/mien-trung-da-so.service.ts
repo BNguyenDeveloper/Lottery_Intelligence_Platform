@@ -4,7 +4,9 @@ import { DailyHits, pickBayesianWeights } from './mien-bac-prediction.service';
 import { DEFAULT_PREDICTION_LEARNING_WEIGHTS } from './prediction-learning-weight.service';
 
 interface HistoryRow { date: string; last2: string }
-export const MIEN_TRUNG_DA_SO_MODEL_VERSION = 'mien-trung-last2-da-so-v2-pair-first';
+export const MIEN_TRUNG_DA_SO_MODEL_VERSION = 'mien-trung-last2-da-so-v3-pair-graph';
+export const MIEN_TRUNG_DA_SO_CANDIDATE_POOL = 20;
+export const MIEN_TRUNG_DA_SO_SELECTION_INDIVIDUAL_WEIGHT = 0.25;
 export const MIEN_TRUNG_DA_SO_WEIGHTS: DaSoWeights = {
   individual: 0.2,
   coOccurrence: 0.5,
@@ -32,15 +34,18 @@ export async function getMienTrungDaSoPrediction(options: {
   const dailyHits = buildDailyHits(rows);
   const throughDate = dailyHits.at(-1)?.date;
   if (!throughDate) return undefined;
-  return buildDaSoPredictionFromDailyHits(dailyHits, throughDate, {
+  const prediction = await buildDaSoPredictionFromDailyHits(dailyHits, throughDate, {
     historyDays: options.historyDays,
     numberTop: options.numberTop ?? 5,
-    candidatePool: options.candidatePool ?? 20,
+    candidatePool: options.candidatePool ?? MIEN_TRUNG_DA_SO_CANDIDATE_POOL,
     pairTop: options.pairTop ?? 10,
     targetDate: options.targetDate,
     weights: MIEN_TRUNG_DA_SO_WEIGHTS,
+    selectionIndividualWeight: MIEN_TRUNG_DA_SO_SELECTION_INDIVIDUAL_WEIGHT,
     predictionWeights: pickBayesianWeights(DEFAULT_PREDICTION_LEARNING_WEIGHTS),
   });
+  if (prediction) prediction.formula += '; selectionScore = 0.25*mean(individual) + 0.75*mean(10 pairScores), candidatePool=20';
+  return prediction;
 }
 
 function buildDailyHits(rows: HistoryRow[]): DailyHits[] {
