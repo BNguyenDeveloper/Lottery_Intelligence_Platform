@@ -134,6 +134,7 @@ npm run job:date -- 2026-06-19
 npm run job:mien-bac
 npm run job:mien-trung
 npm run job:mien-nam
+npm run backtest:prediction:mien-trung -- --test-draws 52 --history-draws 156
 npm run job:region -- mien-nam
 npm run job:region -- mien-nam 2026-06-19
 npm run job:province -- vinh-long 2026-06-19

@@ -1,12 +1,11 @@
 import { MienTrungPredictionSnapshotModel } from '../models/MienTrungPredictionSnapshot';
-import { MienBacPredictionRow } from './mien-bac-prediction.service';
-import { MIEN_TRUNG_LAST2_MODEL_VERSION } from './mien-trung-prediction.service';
+import { MIEN_TRUNG_LAST2_MODEL_VERSION, MienTrungHierarchicalPredictionRow } from './mien-trung-prediction.service';
 
 export async function saveMienTrungPredictionSnapshot(input: {
   predictionDate: string;
   targetDate: string;
   province: string;
-  rows: MienBacPredictionRow[];
+  rows: MienTrungHierarchicalPredictionRow[];
 }): Promise<void> {
   const identity = {
     targetDate: input.targetDate,
@@ -23,9 +22,9 @@ export async function saveMienTrungPredictionSnapshot(input: {
         region: 'mien-trung',
         rows: input.rows.map(({ rank, number, score, repeatPenalty, frequencyScore, recentScore, trendScore,
           recencyScore, gapScore, weekdayScore, markovScore, soiCauScore, reverseScore, cycleScore, digitScore,
-          bridgeScore }) => ({ rank, number, score, repeatPenalty, frequencyScore, recentScore, trendScore,
+          bridgeScore, provinceRankScore, regionalRankScore, provinceWeight, provinceDraws, regionalDraws }) => ({ rank, number, score, repeatPenalty, frequencyScore, recentScore, trendScore,
           recencyScore, gapScore, weekdayScore, markovScore, soiCauScore, reverseScore, cycleScore, digitScore,
-          bridgeScore })),
+          bridgeScore, provinceRankScore, regionalRankScore, provinceWeight, provinceDraws, regionalDraws })),
       },
     },
     { upsert: true },

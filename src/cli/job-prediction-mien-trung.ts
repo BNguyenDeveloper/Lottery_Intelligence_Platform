@@ -2,7 +2,11 @@ import { connectDatabase, disconnectDatabase } from '../config/database';
 import { getScheduledProvinces } from '../constants/schedules';
 import { getProvince } from '../constants/provinces';
 import { getEmailConfigStatus, sendEmail } from '../services/email.service';
-import { predictMienTrungProvinceLast2 } from '../services/mien-trung-prediction.service';
+import {
+  MIEN_TRUNG_HIERARCHICAL_FORMULA,
+  MIEN_TRUNG_LAST2_MODEL_VERSION,
+  predictMienTrungProvinceLast2,
+} from '../services/mien-trung-prediction.service';
 import { saveMienTrungPredictionSnapshot } from '../services/mien-trung-prediction-snapshot.service';
 import { getMienTrungDaSoPrediction, MIEN_TRUNG_DA_SO_MODEL_VERSION } from '../services/mien-trung-da-so.service';
 import { saveMienTrungDaSoSnapshot } from '../services/mien-trung-da-so-snapshot.service';
@@ -35,7 +39,7 @@ async function main(): Promise<void> {
   const provinces = getScheduledProvinces('mien-trung', targetDate) ?? [];
 
   if (!Number.isInteger(historyDays) || historyDays <= 0) throw new Error('history-days must be a positive integer.');
-  if (!Number.isInteger(top) || top <= 0) throw new Error('top must be a positive integer.');
+  if (!Number.isInteger(top) || top <= 0 || top > 100) throw new Error('top must be an integer from 1 to 100.');
 
   await connectDatabase();
   try {
@@ -119,7 +123,9 @@ function buildEmailText(
       '',
       provinceName(result.province),
       'Prediction - Top 5',
-      ...result.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | count=${row.count} | gapDays=${row.gapDays} | weekday=${row.weekdayScore} | soiCau=${row.soiCauScore}`),
+      `Model version: ${MIEN_TRUNG_LAST2_MODEL_VERSION}`,
+      `Formula: ${MIEN_TRUNG_HIERARCHICAL_FORMULA}`,
+      ...result.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | provinceRank=${row.provinceRankScore} | regionalRank=${row.regionalRankScore} | provinceWeight=${row.provinceWeight} | samples=${row.provinceDraws}/${row.regionalDraws}`),
       ...(result.daSo ? [
         '',
         'Da So - Reference Only',
@@ -148,7 +154,7 @@ function buildEmailHtml(
   results: ProvincePrediction[],
 ): string {
   const sections = results.map((result) => {
-    const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.count}</td><td>${row.gapDays}</td><td>${escapeHtml(row.weekdayScore)}</td><td>${escapeHtml(row.soiCauScore)}</td></tr>`).join('');
+    const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${escapeHtml(row.provinceRankScore)}</td><td>${escapeHtml(row.regionalRankScore)}</td><td>${escapeHtml(row.provinceWeight)}</td><td>${row.provinceDraws}/${row.regionalDraws}</td></tr>`).join('');
     const daSoSection = result.daSo ? `<h3>Da So - Reference Only</h3>
       <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_DA_SO_MODEL_VERSION)}</p>
       <p><strong>Selected numbers:</strong> ${result.daSo.numbers.map((row) => escapeHtml(row.number)).join(', ')}</p>
@@ -160,7 +166,8 @@ function buildEmailHtml(
       <p><strong>Formula:</strong> ${escapeHtml(result.specialLast3.formula)}<br>Random Top-1 baseline is 0.1% per draw; this ranking is not a guaranteed probability.</p>` : '';
     return `<h2>${escapeHtml(provinceName(result.province))}</h2>
       <h3>Prediction - Top 5</h3>
-      <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Count</th><th>Gap days</th><th>Weekday</th><th>Soi cau</th></tr></thead><tbody>${predictionRows}</tbody></table>
+      <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_LAST2_MODEL_VERSION)}<br><strong>Formula:</strong> ${escapeHtml(MIEN_TRUNG_HIERARCHICAL_FORMULA)}</p>
+      <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Province rank</th><th>Regional rank</th><th>Province weight</th><th>Samples P/R</th></tr></thead><tbody>${predictionRows}</tbody></table>
       ${daSoSection}
       ${specialLast3Section}`;
   }).join('');

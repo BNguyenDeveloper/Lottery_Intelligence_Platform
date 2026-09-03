@@ -17,6 +17,11 @@ export interface MienTrungPredictionSnapshotRow {
   cycleScore: string;
   digitScore: string;
   bridgeScore: string;
+  provinceRankScore: string;
+  regionalRankScore: string;
+  provinceWeight: string;
+  provinceDraws: number;
+  regionalDraws: number;
 }
 
 interface MienTrungPredictionSnapshotShape {
@@ -47,6 +52,11 @@ const rowSchema = new Schema<MienTrungPredictionSnapshotRow>(
     cycleScore: { type: String, required: true },
     digitScore: { type: String, required: true },
     bridgeScore: { type: String, required: true },
+    provinceRankScore: { type: String, required: true },
+    regionalRankScore: { type: String, required: true },
+    provinceWeight: { type: String, required: true },
+    provinceDraws: { type: Number, required: true },
+    regionalDraws: { type: Number, required: true },
   },
   { _id: false },
 );
