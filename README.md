@@ -170,7 +170,7 @@ Optional repository variables:
 - `XSMB_DAILY_URL_TEMPLATE`
 - `LOTTERY_FETCH_TIMEOUT_MS`
 
-The regional import workflow runs daily at `45 11 * * *` (18:45 Vietnam time). The Mien Bac and Mien Trung prediction workflows run daily at `0 13 * * *` (20:00 Vietnam time) and predict the next Vietnam calendar date by default; manual `--target-date`/workflow input still overrides that date.
+The regional import workflow runs daily at `0 11 * * *` (18:00 Vietnam time). The Mien Bac and Mien Trung prediction workflows run daily at `0 12 * * *` (19:00 Vietnam time) and predict the next Vietnam calendar date by default; manual `--target-date`/workflow input still overrides that date.
 
 ## Crawler Architecture
 
