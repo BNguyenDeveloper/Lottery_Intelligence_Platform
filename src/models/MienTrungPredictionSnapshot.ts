@@ -20,6 +20,7 @@ export interface MienTrungPredictionSnapshotRow {
   provinceRankScore: string;
   regionalRankScore: string;
   provinceWeight: string;
+  drawsSinceLastSeen: number;
   provinceDraws: number;
   regionalDraws: number;
 }
@@ -55,6 +56,7 @@ const rowSchema = new Schema<MienTrungPredictionSnapshotRow>(
     provinceRankScore: { type: String, required: true },
     regionalRankScore: { type: String, required: true },
     provinceWeight: { type: String, required: true },
+    drawsSinceLastSeen: { type: Number, required: true },
     provinceDraws: { type: Number, required: true },
     regionalDraws: { type: Number, required: true },
   },

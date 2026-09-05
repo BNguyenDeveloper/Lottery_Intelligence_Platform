@@ -31,6 +31,7 @@ export interface MienTrungHierarchicalPredictionRow extends MienBacPredictionRow
   provinceRankScore: string;
   regionalRankScore: string;
   provinceWeight: string;
+  drawsSinceLastSeen: number;
   provinceDraws: number;
   regionalDraws: number;
 }
@@ -122,9 +123,17 @@ export function predictMienTrungHierarchicalFromDraws(
       provinceRankScore: format(entry.provinceRankScore),
       regionalRankScore: format(entry.regionalRankScore),
       provinceWeight: format(provinceWeight),
+      drawsSinceLastSeen: countDrawsSinceLastSeen(entry.provinceRow.number, provinceDraws),
       provinceDraws: provinceDraws.length,
       regionalDraws: regionalTraining.length,
     }));
+}
+
+function countDrawsSinceLastSeen(candidate: string, draws: MienTrungHistoryDraw[]): number {
+  for (let index = draws.length - 1; index >= 0; index -= 1) {
+    if (draws[index].values.has(candidate)) return draws.length - index - 1;
+  }
+  return draws.length;
 }
 
 export function buildProvinceDraws(rows: HistoryRow[]): MienTrungHistoryDraw[] {

@@ -125,7 +125,7 @@ function buildEmailText(
       'Prediction - Top 5',
       `Model version: ${MIEN_TRUNG_LAST2_MODEL_VERSION}`,
       `Formula: ${MIEN_TRUNG_HIERARCHICAL_FORMULA}`,
-      ...result.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | provinceRank=${row.provinceRankScore} | regionalRank=${row.regionalRankScore} | provinceWeight=${row.provinceWeight} | samples=${row.provinceDraws}/${row.regionalDraws}`),
+      ...result.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | drawsSinceLastSeen=${row.drawsSinceLastSeen} | provinceRank=${row.provinceRankScore} | regionalRank=${row.regionalRankScore} | provinceWeight=${row.provinceWeight} | samples=${row.provinceDraws}/${row.regionalDraws}`),
       ...(result.daSo ? [
         '',
         'Da So - Reference Only',
@@ -154,7 +154,7 @@ function buildEmailHtml(
   results: ProvincePrediction[],
 ): string {
   const sections = results.map((result) => {
-    const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${escapeHtml(row.provinceRankScore)}</td><td>${escapeHtml(row.regionalRankScore)}</td><td>${escapeHtml(row.provinceWeight)}</td><td>${row.provinceDraws}/${row.regionalDraws}</td></tr>`).join('');
+    const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.drawsSinceLastSeen}</td><td>${escapeHtml(row.provinceRankScore)}</td><td>${escapeHtml(row.regionalRankScore)}</td><td>${escapeHtml(row.provinceWeight)}</td><td>${row.provinceDraws}/${row.regionalDraws}</td></tr>`).join('');
     const daSoSection = result.daSo ? `<h3>Da So - Reference Only</h3>
       <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_DA_SO_MODEL_VERSION)}</p>
       <p><strong>Selected numbers:</strong> ${result.daSo.numbers.map((row) => escapeHtml(row.number)).join(', ')}</p>
@@ -167,7 +167,7 @@ function buildEmailHtml(
     return `<h2>${escapeHtml(provinceName(result.province))}</h2>
       <h3>Prediction - Top 5</h3>
       <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_LAST2_MODEL_VERSION)}<br><strong>Formula:</strong> ${escapeHtml(MIEN_TRUNG_HIERARCHICAL_FORMULA)}</p>
-      <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Province rank</th><th>Regional rank</th><th>Province weight</th><th>Samples P/R</th></tr></thead><tbody>${predictionRows}</tbody></table>
+      <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Draws since last seen</th><th>Province rank</th><th>Regional rank</th><th>Province weight</th><th>Samples P/R</th></tr></thead><tbody>${predictionRows}</tbody></table>
       ${daSoSection}
       ${specialLast3Section}`;
   }).join('');
