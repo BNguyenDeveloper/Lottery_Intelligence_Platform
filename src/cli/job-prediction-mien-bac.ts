@@ -17,9 +17,11 @@ import {
   MIEN_BAC_TRANSITION_FORMULA,
   MIEN_BAC_TRANSITION_MODEL_VERSION,
   MienBacTransitionPredictionRow,
+  MienBacTransitionConfig,
   predictMienBacTransitionMatrix,
 } from '../services/mien-bac-transition-matrix.service';
 import { saveMienBacTransitionSnapshot } from '../services/mien-bac-transition-snapshot.service';
+import { getLatestMienBacTransitionConfig } from '../services/mien-bac-transition-learning.service';
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
@@ -101,9 +103,11 @@ async function main(): Promise<void> {
   const recentSummaryRows = await getRecentSummaryRows(recentSummaryDays, recentSummaryTop);
   const missingHeadRows = await getMissingHeadRows(missingHeadTop);
   const daSo = target === 'last2' ? await getDaSoPrediction(historyDays) : undefined;
-  const transitionRows = target === 'last2'
+  const transitionPrediction = target === 'last2'
     ? await getTransitionPrediction(historyDays, targetDate, top)
-    : [];
+    : undefined;
+  const transitionRows = transitionPrediction?.rows ?? [];
+  const transitionConfig = transitionPrediction?.config ?? DEFAULT_MIEN_BAC_TRANSITION_CONFIG;
 
   if (rows.length === 0) {
     logger.warn('No Mien Bac prediction rows found', { target, historyDays, top });
@@ -167,7 +171,7 @@ async function main(): Promise<void> {
     console.log(`Formula: ${daSo.formula}`);
   }
   if (transitionRows.length > 0) {
-    await saveTransitionSnapshot(predictionDate, targetDate, transitionRows);
+    await saveTransitionSnapshot(predictionDate, targetDate, transitionRows, transitionConfig);
     console.log('Prediction + Transition Matrix - Experimental Reference Only');
     console.table(transitionRows);
     console.log(`Formula: ${MIEN_BAC_TRANSITION_FORMULA}`);
@@ -198,8 +202,8 @@ async function main(): Promise<void> {
 
   await sendEmail({
     subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows),
+    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows, transitionConfig),
+    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows, transitionConfig),
   });
   logger.info('Mien Bac prediction email sent successfully.');
 }
@@ -235,14 +239,16 @@ async function getTransitionPrediction(
   historyDays: number,
   targetDate: string,
   top: number,
-): Promise<MienBacTransitionPredictionRow[]> {
+): Promise<{ rows: MienBacTransitionPredictionRow[]; config: MienBacTransitionConfig } | undefined> {
   try {
-    return await predictMienBacTransitionMatrix({ historyDays, targetDate, top });
+    const config = await getLatestMienBacTransitionConfig();
+    const rows = await predictMienBacTransitionMatrix({ historyDays, targetDate, top, config });
+    return { rows, config };
   } catch (error) {
     logger.warn('Mien Bac transition matrix prediction skipped', {
       error: error instanceof Error ? error.message : String(error),
     });
-    return [];
+    return undefined;
   }
 }
 
@@ -250,9 +256,10 @@ async function saveTransitionSnapshot(
   predictionDate: string,
   targetDate: string,
   rows: MienBacTransitionPredictionRow[],
+  config: MienBacTransitionConfig,
 ): Promise<void> {
   try {
-    await saveMienBacTransitionSnapshot({ predictionDate, targetDate, rows });
+    await saveMienBacTransitionSnapshot({ predictionDate, targetDate, rows, config });
   } catch (error) {
     logger.warn('Mien Bac transition matrix snapshot save skipped', {
       targetDate,
@@ -287,6 +294,7 @@ function buildPredictionEmailText(
   missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
   daSo: MienBacDaSoPrediction | undefined,
   transitionRows: MienBacTransitionPredictionRow[],
+  transitionConfig: MienBacTransitionConfig,
 ): string {
   const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
   const predictionBody = rows.map((row) =>
@@ -378,7 +386,7 @@ function buildPredictionEmailText(
         'Prediction + Transition Matrix - Experimental Reference Only',
         `Model version: ${MIEN_BAC_TRANSITION_MODEL_VERSION}`,
         `Formula: ${MIEN_BAC_TRANSITION_FORMULA}`,
-        `Config: alpha=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.priorStrength} | topEdges=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.topEdges} | lags=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lags.join(',')} | lagWeights=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lagWeights.join(',')} | lambda=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lambda}`,
+        `Config: alpha=${transitionConfig.priorStrength} | topEdges=${transitionConfig.topEdges} | lags=${transitionConfig.lags.join(',')} | lagWeights=${transitionConfig.lagWeights.join(',')} | lambda=${transitionConfig.lambda}`,
         'This isolated section does not affect Prediction, Blend, evaluation, or learning.',
         ...transitionRows.map((row) => `#${row.rank} | number=${row.number} | final=${row.finalScore} | base=${row.baseScore} | baseZ=${row.baseZScore} | transitionResidual=${row.transitionResidual} | transitionZ=${row.transitionZScore} | supportingEdges=${row.supportingEdges} | historyDraws=${row.historyDraws}`),
       ]
@@ -413,6 +421,7 @@ function buildPredictionEmailHtml(
   missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
   daSo: MienBacDaSoPrediction | undefined,
   transitionRows: MienBacTransitionPredictionRow[],
+  transitionConfig: MienBacTransitionConfig,
 ): string {
   const tableRows = rows
     .map(
@@ -595,7 +604,7 @@ function buildPredictionEmailHtml(
     ? `<h3>Prediction + Transition Matrix - Experimental Reference Only</h3>
     <p><strong>Model version:</strong> ${escapeHtml(MIEN_BAC_TRANSITION_MODEL_VERSION)}<br>
     <strong>Formula:</strong> ${escapeHtml(MIEN_BAC_TRANSITION_FORMULA)}<br>
-    <strong>Config:</strong> alpha=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.priorStrength}, topEdges=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.topEdges}, lags=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lags.join(',')}, lagWeights=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lagWeights.join(',')}, lambda=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lambda}<br>
+    <strong>Config:</strong> alpha=${transitionConfig.priorStrength}, topEdges=${transitionConfig.topEdges}, lags=${transitionConfig.lags.join(',')}, lagWeights=${transitionConfig.lagWeights.join(',')}, lambda=${transitionConfig.lambda}<br>
     This isolated section does not affect Prediction, Blend, evaluation, or learning.</p>
     <table border="1" cellpadding="6" cellspacing="0">
       <thead><tr><th>Rank</th><th>Number</th><th>Final</th><th>Base</th><th>Base Z</th><th>Transition residual</th><th>Transition Z</th><th>Supporting edges</th><th>History draws</th></tr></thead>

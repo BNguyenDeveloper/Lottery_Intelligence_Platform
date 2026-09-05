@@ -1,8 +1,8 @@
 import { MienBacTransitionPredictionSnapshotModel } from '../models/MienBacTransitionPredictionSnapshot';
 import {
-  DEFAULT_MIEN_BAC_TRANSITION_CONFIG,
   MIEN_BAC_TRANSITION_FORMULA,
   MIEN_BAC_TRANSITION_MODEL_VERSION,
+  MienBacTransitionConfig,
   MienBacTransitionPredictionRow,
 } from './mien-bac-transition-matrix.service';
 
@@ -10,6 +10,7 @@ export async function saveMienBacTransitionSnapshot(input: {
   predictionDate: string;
   targetDate: string;
   rows: MienBacTransitionPredictionRow[];
+  config: MienBacTransitionConfig;
 }): Promise<void> {
   await MienBacTransitionPredictionSnapshotModel.updateOne(
     { targetDate: input.targetDate, modelVersion: MIEN_BAC_TRANSITION_MODEL_VERSION },
@@ -21,7 +22,7 @@ export async function saveMienBacTransitionSnapshot(input: {
       target: 'last2',
       modelVersion: MIEN_BAC_TRANSITION_MODEL_VERSION,
       formula: MIEN_BAC_TRANSITION_FORMULA,
-      config: DEFAULT_MIEN_BAC_TRANSITION_CONFIG,
+      config: input.config,
       rows: input.rows,
     } },
     { upsert: true },

@@ -7,6 +7,8 @@ import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 import { evaluateMienBacDaSo } from '../services/da-so-evaluation.service';
 import { updateMienBacDaSoLearning } from '../services/da-so-learning.service';
+import { evaluateMienBacTransitionPrediction } from '../services/mien-bac-transition-evaluation.service';
+import { updateMienBacTransitionLearning } from '../services/mien-bac-transition-learning.service';
 
 const DEFAULT_OUTPUT_TOP = 5;
 
@@ -101,6 +103,12 @@ async function main(): Promise<void> {
   if (daSoEvaluation) logger.info('Mien Bac da so evaluation completed', daSoEvaluation);
   const daSoLearning = await learnDaSoFailSoft({ historyDays, backtestDays, learningRate });
   if (daSoLearning) logger.info('Mien Bac da so learning completed', { date, ...daSoLearning });
+  const transitionEvaluation = await evaluateTransitionFailSoft(date);
+  if (transitionEvaluation) {
+    logger.info('Mien Bac transition residual evaluation completed', transitionEvaluation);
+    const transitionLearning = await learnTransitionFailSoft({ historyDays, backtestDays, top, learningRate, evaluationDate: date });
+    if (transitionLearning) logger.info('Mien Bac transition residual learning completed', { date, ...transitionLearning });
+  }
 }
 
 async function evaluateDaSoFailSoft(date: string): ReturnType<typeof evaluateMienBacDaSo> {
@@ -122,6 +130,31 @@ async function learnDaSoFailSoft(
     return await updateMienBacDaSoLearning(options);
   } catch (error) {
     logger.warn('Mien Bac da so learning skipped after an isolated failure', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+async function evaluateTransitionFailSoft(date: string): ReturnType<typeof evaluateMienBacTransitionPrediction> {
+  try {
+    return await evaluateMienBacTransitionPrediction(date);
+  } catch (error) {
+    logger.warn('Mien Bac transition residual evaluation skipped after an isolated failure', {
+      date,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+async function learnTransitionFailSoft(
+  options: Parameters<typeof updateMienBacTransitionLearning>[0],
+): Promise<Awaited<ReturnType<typeof updateMienBacTransitionLearning>> | undefined> {
+  try {
+    return await updateMienBacTransitionLearning(options);
+  } catch (error) {
+    logger.warn('Mien Bac transition residual learning skipped after an isolated failure', {
       error: error instanceof Error ? error.message : String(error),
     });
     return undefined;
