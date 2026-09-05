@@ -9,6 +9,7 @@ interface MienBacTransitionSnapshotRow {
   transitionResidual: string;
   transitionZScore: string;
   supportingEdges: number;
+  drawsSinceLastSeen: number;
   historyDraws: number;
 }
 
@@ -39,6 +40,7 @@ const rowSchema = new Schema<MienBacTransitionSnapshotRow>({
   transitionResidual: { type: String, required: true },
   transitionZScore: { type: String, required: true },
   supportingEdges: { type: Number, required: true },
+  drawsSinceLastSeen: { type: Number, required: true },
   historyDraws: { type: Number, required: true },
 }, { _id: false });
 

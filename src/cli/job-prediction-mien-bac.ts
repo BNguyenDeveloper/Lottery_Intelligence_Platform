@@ -388,7 +388,7 @@ function buildPredictionEmailText(
         `Formula: ${MIEN_BAC_TRANSITION_FORMULA}`,
         `Config: alpha=${transitionConfig.priorStrength} | topEdges=${transitionConfig.topEdges} | lags=${transitionConfig.lags.join(',')} | lagWeights=${transitionConfig.lagWeights.join(',')} | lambda=${transitionConfig.lambda}`,
         'This isolated section does not affect Prediction, Blend, evaluation, or learning.',
-        ...transitionRows.map((row) => `#${row.rank} | number=${row.number} | final=${row.finalScore} | base=${row.baseScore} | baseZ=${row.baseZScore} | transitionResidual=${row.transitionResidual} | transitionZ=${row.transitionZScore} | supportingEdges=${row.supportingEdges} | historyDraws=${row.historyDraws}`),
+        ...transitionRows.map((row) => `#${row.rank} | number=${row.number} | drawsSinceLastSeen=${row.drawsSinceLastSeen} | final=${row.finalScore} | base=${row.baseScore} | baseZ=${row.baseZScore} | transitionResidual=${row.transitionResidual} | transitionZ=${row.transitionZScore} | supportingEdges=${row.supportingEdges} | historyDraws=${row.historyDraws}`),
       ]
     : [];
 
@@ -607,8 +607,8 @@ function buildPredictionEmailHtml(
     <strong>Config:</strong> alpha=${transitionConfig.priorStrength}, topEdges=${transitionConfig.topEdges}, lags=${transitionConfig.lags.join(',')}, lagWeights=${transitionConfig.lagWeights.join(',')}, lambda=${transitionConfig.lambda}<br>
     This isolated section does not affect Prediction, Blend, evaluation, or learning.</p>
     <table border="1" cellpadding="6" cellspacing="0">
-      <thead><tr><th>Rank</th><th>Number</th><th>Final</th><th>Base</th><th>Base Z</th><th>Transition residual</th><th>Transition Z</th><th>Supporting edges</th><th>History draws</th></tr></thead>
-      <tbody>${transitionRows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.finalScore)}</td><td>${escapeHtml(row.baseScore)}</td><td>${escapeHtml(row.baseZScore)}</td><td>${escapeHtml(row.transitionResidual)}</td><td>${escapeHtml(row.transitionZScore)}</td><td>${row.supportingEdges}</td><td>${row.historyDraws}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>Rank</th><th>Number</th><th>Draws since last seen</th><th>Final</th><th>Base</th><th>Base Z</th><th>Transition residual</th><th>Transition Z</th><th>Supporting edges</th><th>History draws</th></tr></thead>
+      <tbody>${transitionRows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${row.drawsSinceLastSeen}</td><td>${escapeHtml(row.finalScore)}</td><td>${escapeHtml(row.baseScore)}</td><td>${escapeHtml(row.baseZScore)}</td><td>${escapeHtml(row.transitionResidual)}</td><td>${escapeHtml(row.transitionZScore)}</td><td>${row.supportingEdges}</td><td>${row.historyDraws}</td></tr>`).join('')}</tbody>
     </table>`
     : '';
 

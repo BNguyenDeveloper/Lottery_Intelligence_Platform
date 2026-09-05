@@ -33,6 +33,7 @@ export interface MienBacTransitionPredictionRow {
   transitionResidual: string;
   transitionZScore: string;
   supportingEdges: number;
+  drawsSinceLastSeen: number;
   historyDraws: number;
 }
 
@@ -78,7 +79,15 @@ export function rankMienBacTransitionMatrix(
     .slice(0, top)
     .map((row, index) => ({ rank: index + 1, number: row.number, finalScore: format(row.finalScore),
       baseScore: format(row.baseScore), baseZScore: format(row.baseZScore), transitionResidual: format(row.transitionResidual),
-      transitionZScore: format(row.transitionZScore), supportingEdges: row.supportingEdges, historyDraws: dailyHits.length }));
+      transitionZScore: format(row.transitionZScore), supportingEdges: row.supportingEdges,
+      drawsSinceLastSeen: countDrawsSinceLastSeen(row.number, dailyHits), historyDraws: dailyHits.length }));
+}
+
+function countDrawsSinceLastSeen(candidate: string, draws: DailyHits[]): number {
+  for (let index = draws.length - 1; index >= 0; index -= 1) {
+    if (draws[index].values.has(candidate)) return draws.length - index - 1;
+  }
+  return draws.length;
 }
 
 function buildTransitionSignals(dailyHits: DailyHits[], candidates: string[], config: MienBacTransitionConfig): Map<string, TransitionSignal> {
