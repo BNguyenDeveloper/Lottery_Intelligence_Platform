@@ -12,6 +12,14 @@ import { saveMienBacDaSoSnapshot } from '../services/da-so-snapshot.service';
 import { saveMienBacLast2PredictionSnapshot } from '../services/prediction-snapshot.service';
 import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from '../services/prediction-learning-weight.service';
 import { getRecentLast2Summary } from '../services/recent-last2-summary.service';
+import {
+  DEFAULT_MIEN_BAC_TRANSITION_CONFIG,
+  MIEN_BAC_TRANSITION_FORMULA,
+  MIEN_BAC_TRANSITION_MODEL_VERSION,
+  MienBacTransitionPredictionRow,
+  predictMienBacTransitionMatrix,
+} from '../services/mien-bac-transition-matrix.service';
+import { saveMienBacTransitionSnapshot } from '../services/mien-bac-transition-snapshot.service';
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
@@ -93,6 +101,9 @@ async function main(): Promise<void> {
   const recentSummaryRows = await getRecentSummaryRows(recentSummaryDays, recentSummaryTop);
   const missingHeadRows = await getMissingHeadRows(missingHeadTop);
   const daSo = target === 'last2' ? await getDaSoPrediction(historyDays) : undefined;
+  const transitionRows = target === 'last2'
+    ? await getTransitionPrediction(historyDays, targetDate, top)
+    : [];
 
   if (rows.length === 0) {
     logger.warn('No Mien Bac prediction rows found', { target, historyDays, top });
@@ -155,6 +166,12 @@ async function main(): Promise<void> {
     console.table(daSo.pairs);
     console.log(`Formula: ${daSo.formula}`);
   }
+  if (transitionRows.length > 0) {
+    await saveTransitionSnapshot(predictionDate, targetDate, transitionRows);
+    console.log('Prediction + Transition Matrix - Experimental Reference Only');
+    console.table(transitionRows);
+    console.log(`Formula: ${MIEN_BAC_TRANSITION_FORMULA}`);
+  }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
   logger.info('Mien Bac prediction completed', {
@@ -170,6 +187,7 @@ async function main(): Promise<void> {
     recentSummaryRows: recentSummaryRows.length,
     missingHeadRows: missingHeadRows.length,
     daSoPairs: daSo?.pairs.length ?? 0,
+    transitionRows: transitionRows.length,
   });
 
   const emailStatus = getEmailConfigStatus();
@@ -180,8 +198,8 @@ async function main(): Promise<void> {
 
   await sendEmail({
     subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo),
+    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows),
+    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows),
   });
   logger.info('Mien Bac prediction email sent successfully.');
 }
@@ -213,6 +231,36 @@ async function getDaSoPrediction(historyDays: number): Promise<MienBacDaSoPredic
   }
 }
 
+async function getTransitionPrediction(
+  historyDays: number,
+  targetDate: string,
+  top: number,
+): Promise<MienBacTransitionPredictionRow[]> {
+  try {
+    return await predictMienBacTransitionMatrix({ historyDays, targetDate, top });
+  } catch (error) {
+    logger.warn('Mien Bac transition matrix prediction skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+async function saveTransitionSnapshot(
+  predictionDate: string,
+  targetDate: string,
+  rows: MienBacTransitionPredictionRow[],
+): Promise<void> {
+  try {
+    await saveMienBacTransitionSnapshot({ predictionDate, targetDate, rows });
+  } catch (error) {
+    logger.warn('Mien Bac transition matrix snapshot save skipped', {
+      targetDate,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function saveDaSoSnapshot(
   targetDate: string,
   prediction: MienBacDaSoPrediction,
@@ -238,6 +286,7 @@ function buildPredictionEmailText(
   recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
   missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
   daSo: MienBacDaSoPrediction | undefined,
+  transitionRows: MienBacTransitionPredictionRow[],
 ): string {
   const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
   const predictionBody = rows.map((row) =>
@@ -323,6 +372,17 @@ function buildPredictionEmailText(
         ...daSo.pairs.map((row) => `#${row.rank} | pair=${row.pair} | score=${row.score} | individual=${row.individualScore} | coOccurrence=${row.coOccurrenceScore} | recentCoOccurrence=${row.recentCoOccurrenceScore} | lift=${row.associationLift} | estimatedPairRate=${row.estimatedPairRate}`),
       ]
     : [];
+  const transitionBody = transitionRows.length > 0
+    ? [
+        '',
+        'Prediction + Transition Matrix - Experimental Reference Only',
+        `Model version: ${MIEN_BAC_TRANSITION_MODEL_VERSION}`,
+        `Formula: ${MIEN_BAC_TRANSITION_FORMULA}`,
+        `Config: alpha=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.priorStrength} | topEdges=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.topEdges} | lags=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lags.join(',')} | lagWeights=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lagWeights.join(',')} | lambda=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lambda}`,
+        'This isolated section does not affect Prediction, Blend, evaluation, or learning.',
+        ...transitionRows.map((row) => `#${row.rank} | number=${row.number} | final=${row.finalScore} | base=${row.baseScore} | baseZ=${row.baseZScore} | transitionResidual=${row.transitionResidual} | transitionZ=${row.transitionZScore} | supportingEdges=${row.supportingEdges} | historyDraws=${row.historyDraws}`),
+      ]
+    : [];
 
   return [
     ...header,
@@ -338,6 +398,7 @@ function buildPredictionEmailText(
     ...missingHeadHeader,
     ...missingHeadBody,
     ...daSoBody,
+    ...transitionBody,
   ].join('\n');
 }
 
@@ -351,6 +412,7 @@ function buildPredictionEmailHtml(
   recentSummaryRows: Awaited<ReturnType<typeof getRecentLast2Summary>>,
   missingHeadRows: Awaited<ReturnType<typeof getMienBacMissingHeadFollowUp>>,
   daSo: MienBacDaSoPrediction | undefined,
+  transitionRows: MienBacTransitionPredictionRow[],
 ): string {
   const tableRows = rows
     .map(
@@ -529,6 +591,17 @@ function buildPredictionEmailHtml(
     <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Pair</th><th>Score</th><th>Individual</th><th>Co-occurrence</th><th>Recent</th><th>Lift</th><th>Estimated rate</th></tr></thead>
     <tbody>${daSo.pairs.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.pair)}</strong></td><td>${row.score}</td><td>${row.individualScore}</td><td>${row.coOccurrenceScore}</td><td>${row.recentCoOccurrenceScore}</td><td>${row.associationLift}</td><td>${row.estimatedPairRate}</td></tr>`).join('')}</tbody></table>`
     : '';
+  const transitionSection = transitionRows.length > 0
+    ? `<h3>Prediction + Transition Matrix - Experimental Reference Only</h3>
+    <p><strong>Model version:</strong> ${escapeHtml(MIEN_BAC_TRANSITION_MODEL_VERSION)}<br>
+    <strong>Formula:</strong> ${escapeHtml(MIEN_BAC_TRANSITION_FORMULA)}<br>
+    <strong>Config:</strong> alpha=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.priorStrength}, topEdges=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.topEdges}, lags=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lags.join(',')}, lagWeights=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lagWeights.join(',')}, lambda=${DEFAULT_MIEN_BAC_TRANSITION_CONFIG.lambda}<br>
+    This isolated section does not affect Prediction, Blend, evaluation, or learning.</p>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead><tr><th>Rank</th><th>Number</th><th>Final</th><th>Base</th><th>Base Z</th><th>Transition residual</th><th>Transition Z</th><th>Supporting edges</th><th>History draws</th></tr></thead>
+      <tbody>${transitionRows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.finalScore)}</td><td>${escapeHtml(row.baseScore)}</td><td>${escapeHtml(row.baseZScore)}</td><td>${escapeHtml(row.transitionResidual)}</td><td>${escapeHtml(row.transitionZScore)}</td><td>${row.supportingEdges}</td><td>${row.historyDraws}</td></tr>`).join('')}</tbody>
+    </table>`
+    : '';
 
   return `<!doctype html>
 <html>
@@ -567,6 +640,7 @@ function buildPredictionEmailHtml(
     ${recentSummarySection}
     ${missingHeadSection}
     ${daSoSection}
+    ${transitionSection}
   </body>
 </html>`;
 }
