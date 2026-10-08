@@ -22,7 +22,7 @@ import {
 } from '../services/mien-bac-transition-matrix.service';
 import { saveMienBacTransitionSnapshot } from '../services/mien-bac-transition-snapshot.service';
 import { getLatestMienBacTransitionConfig } from '../services/mien-bac-transition-learning.service';
-import { getVietnamDateString } from '../utils/date';
+import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
 const DEFAULT_PREDICTION_TOP = 5;
@@ -57,7 +57,9 @@ async function main(): Promise<void> {
   );
   const missingHeadTop = Number(option('missing-head-top') ?? process.env.PREDICTION_MISSING_HEAD_TOP ?? DEFAULT_MISSING_HEAD_TOP);
   const predictionDate = getVietnamDateString();
-  const targetDate = option('target-date') ?? process.env.PREDICTION_TARGET_DATE ?? shiftDate(predictionDate, 1);
+  const configuredTargetDate = option('target-date')?.trim() || process.env.PREDICTION_TARGET_DATE?.trim();
+  const targetDate = configuredTargetDate || shiftDate(predictionDate, 1);
+  assertDateString(targetDate);
 
   if (!Number.isInteger(historyDays) || historyDays <= 0) {
     throw new Error('history-days must be a positive integer.');
