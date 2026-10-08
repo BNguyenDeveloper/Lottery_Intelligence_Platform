@@ -203,9 +203,9 @@ async function main(): Promise<void> {
   }
 
   await sendEmail({
-    subject: `[LotoAI] Mien Bac prediction: ${rows[0].number}`,
-    text: buildPredictionEmailText(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows, transitionConfig),
-    html: buildPredictionEmailHtml(summary, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows, transitionConfig),
+    subject: `[LotoAI] Mien Bac prediction for ${targetDate}: ${rows[0].number}`,
+    text: buildPredictionEmailText(summary, predictionDate, targetDate, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows, transitionConfig),
+    html: buildPredictionEmailHtml(summary, predictionDate, targetDate, target, historyDays, rows, trendRows, blendRows, recentSummaryRows, missingHeadRows, daSo, transitionRows, transitionConfig),
   });
   logger.info('Mien Bac prediction email sent successfully.');
 }
@@ -287,6 +287,8 @@ async function saveDaSoSnapshot(
 
 function buildPredictionEmailText(
   summary: string,
+  predictionDate: string,
+  targetDate: string,
   target: PredictionTarget,
   historyDays: number,
   rows: Awaited<ReturnType<typeof predictMienBacNumbers>>,
@@ -298,7 +300,14 @@ function buildPredictionEmailText(
   transitionRows: MienBacTransitionPredictionRow[],
   transitionConfig: MienBacTransitionConfig,
 ): string {
-  const header = [summary, `Target: ${target}`, `History days: ${historyDays}`, ''];
+  const header = [
+    summary,
+    `Prediction date: ${predictionDate}`,
+    `Target result date: ${targetDate}`,
+    `Target: ${target}`,
+    `History days: ${historyDays}`,
+    '',
+  ];
   const predictionBody = rows.map((row) =>
     [
       `#${row.rank}`,
@@ -414,6 +423,8 @@ function buildPredictionEmailText(
 
 function buildPredictionEmailHtml(
   summary: string,
+  predictionDate: string,
+  targetDate: string,
   target: PredictionTarget,
   historyDays: number,
   rows: Awaited<ReturnType<typeof predictMienBacNumbers>>,
@@ -618,7 +629,10 @@ function buildPredictionEmailHtml(
 <html>
   <body>
     <h2>${escapeHtml(summary)}</h2>
-    <p>Target: ${escapeHtml(target)}<br>History days: ${historyDays}</p>
+    <p><strong>Prediction date:</strong> ${escapeHtml(predictionDate)}<br>
+    <strong>Target result date:</strong> ${escapeHtml(targetDate)}<br>
+    <strong>Target:</strong> ${escapeHtml(target)}<br>
+    <strong>History days:</strong> ${historyDays}</p>
     <h3>Prediction</h3>
     <table border="1" cellpadding="6" cellspacing="0">
       <thead>
