@@ -2,7 +2,7 @@ name: Daily Mien Trung Prediction
 
 on:
   schedule:
-    - cron: '0 12 * * *' # 19:00 Vietnam time, after the 18:00 import jobs
+    - cron: '23 12 * * *' # 19:23 Vietnam time, after the 18:17 import jobs
   workflow_dispatch:
     inputs:
       target_date:
@@ -38,6 +38,15 @@ jobs:
         run: npm ci --include=dev
       - name: Build
         run: npm run build
+      - name: Resolve scheduled prediction target date
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: |
+          prediction_date="$(TZ=Asia/Ho_Chi_Minh date -d '12 hours ago' +%F)"
+          target_date="$(date -u -d "$prediction_date + 1 day" +%F)"
+          echo "MIEN_TRUNG_PREDICTION_TARGET_DATE=$target_date" >> "$GITHUB_ENV"
+          echo "Resolved prediction date: $prediction_date"
+          echo "Resolved target result date: $target_date"
       - name: Check email configuration
         run: |
           [ -n "$SMTP_HOST" ] && echo "SMTP_HOST configured: yes" || echo "SMTP_HOST configured: no"

@@ -2,12 +2,17 @@ name: Daily Lottery Job
 
 on:
   schedule:
-    - cron: '0 11 * * *' # 18:00 Vietnam time - all regions
+    - cron: '17 11 * * *' # 18:17 Vietnam time - avoid top-of-hour schedule congestion
   workflow_dispatch:
+    inputs:
+      target_date:
+        description: Optional result date (YYYY-MM-DD)
+        required: false
+        type: string
 
 jobs:
   daily-mien-bac:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 11 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -17,6 +22,7 @@ jobs:
       LOTTERY_SOURCE_BASE_URL: https://xskt.com.vn
       XSMB_DAILY_URL_TEMPLATE: https://xoso.com.vn/xsmb-{dd}-{mm}-{yyyy}.html
       LOTTERY_FETCH_TIMEOUT_MS: 25000
+      REQUESTED_TARGET_DATE: ${{ inputs.target_date || '' }}
 
     steps:
       - name: Checkout
@@ -33,15 +39,29 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Resolve lottery result date
+        shell: bash
+        run: |
+          if [[ -n "$REQUESTED_TARGET_DATE" ]]; then
+            [[ "$REQUESTED_TARGET_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "Invalid target_date: $REQUESTED_TARGET_DATE"; exit 1; }
+            result_date="$REQUESTED_TARGET_DATE"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            result_date="$(TZ=Asia/Ho_Chi_Minh date -d '12 hours ago' +%F)"
+          else
+            result_date="$(TZ=Asia/Ho_Chi_Minh date +%F)"
+          fi
+          echo "LOTTERY_RESULT_DATE=$result_date" >> "$GITHUB_ENV"
+          echo "Resolved lottery result date: $result_date"
 
       - name: Run northern daily lottery job
-        run: npm run job:mien-bac
+        run: npm run job:mien-bac -- "$LOTTERY_RESULT_DATE"
 
       - name: Evaluate Mien Bac prediction after result import
-        run: npm run job:post-result:mien-bac
+        run: npm run job:post-result:mien-bac -- --date "$LOTTERY_RESULT_DATE"
 
   daily-mien-trung:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 11 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -51,6 +71,7 @@ jobs:
       LOTTERY_SOURCE_BASE_URL: https://xskt.com.vn
       XSKT_XSMB_DAILY_URL_TEMPLATE: https://xskt.net/xsmb/{dd}-{mm}-{yyyy}
       LOTTERY_FETCH_TIMEOUT_MS: 25000
+      REQUESTED_TARGET_DATE: ${{ inputs.target_date || '' }}
 
     steps:
       - name: Checkout
@@ -67,12 +88,26 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Resolve lottery result date
+        shell: bash
+        run: |
+          if [[ -n "$REQUESTED_TARGET_DATE" ]]; then
+            [[ "$REQUESTED_TARGET_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "Invalid target_date: $REQUESTED_TARGET_DATE"; exit 1; }
+            result_date="$REQUESTED_TARGET_DATE"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            result_date="$(TZ=Asia/Ho_Chi_Minh date -d '12 hours ago' +%F)"
+          else
+            result_date="$(TZ=Asia/Ho_Chi_Minh date +%F)"
+          fi
+          echo "LOTTERY_RESULT_DATE=$result_date" >> "$GITHUB_ENV"
+          echo "Resolved lottery result date: $result_date"
 
       - name: Run central daily lottery job
-        run: npm run job:mien-trung
+        run: npm run job:mien-trung -- "$LOTTERY_RESULT_DATE"
 
   daily-mien-nam:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 11 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -82,6 +117,7 @@ jobs:
       LOTTERY_SOURCE_BASE_URL: https://xskt.com.vn
       XSKT_XSMB_DAILY_URL_TEMPLATE: https://xskt.net/xsmb/{dd}-{mm}-{yyyy}
       LOTTERY_FETCH_TIMEOUT_MS: 25000
+      REQUESTED_TARGET_DATE: ${{ inputs.target_date || '' }}
 
     steps:
       - name: Checkout
@@ -99,5 +135,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Resolve lottery result date
+        shell: bash
+        run: |
+          if [[ -n "$REQUESTED_TARGET_DATE" ]]; then
+            [[ "$REQUESTED_TARGET_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "Invalid target_date: $REQUESTED_TARGET_DATE"; exit 1; }
+            result_date="$REQUESTED_TARGET_DATE"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            result_date="$(TZ=Asia/Ho_Chi_Minh date -d '12 hours ago' +%F)"
+          else
+            result_date="$(TZ=Asia/Ho_Chi_Minh date +%F)"
+          fi
+          echo "LOTTERY_RESULT_DATE=$result_date" >> "$GITHUB_ENV"
+          echo "Resolved lottery result date: $result_date"
+
       - name: Run southern daily lottery job
-        run: npm run job:mien-nam
+        run: npm run job:mien-nam -- "$LOTTERY_RESULT_DATE"
