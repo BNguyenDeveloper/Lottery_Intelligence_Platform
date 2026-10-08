@@ -2,7 +2,7 @@ name: Daily Lottery Job
 
 on:
   schedule:
-    - cron: '17 11 * * *' # 18:17 Vietnam time - avoid top-of-hour schedule congestion
+    - cron: '14 12 * * *' # 19:14 Vietnam time - avoid top-of-hour schedule congestion
   workflow_dispatch:
     inputs:
       target_date:
@@ -12,7 +12,7 @@ on:
 
 jobs:
   daily-mien-bac:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '14 12 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -61,7 +61,7 @@ jobs:
         run: npm run job:post-result:mien-bac -- --date "$LOTTERY_RESULT_DATE"
 
   daily-mien-trung:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '14 12 * * *'
     runs-on: ubuntu-latest
 
     env:
@@ -107,7 +107,7 @@ jobs:
         run: npm run job:mien-trung -- "$LOTTERY_RESULT_DATE"
 
   daily-mien-nam:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 11 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '14 12 * * *'
     runs-on: ubuntu-latest
 
     env:
