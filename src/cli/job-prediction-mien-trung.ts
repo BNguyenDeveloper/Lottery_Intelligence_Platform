@@ -18,6 +18,11 @@ import {
   predictMienTrungProvinceSpecialLast3,
 } from '../services/mien-trung-special-last3.service';
 import { saveMienTrungSpecialLast3Snapshot } from '../services/mien-trung-special-last3-snapshot.service';
+import {
+  MienTrungRegionalDailyHot8Prediction,
+  predictMienTrungRegionalDailyHot8,
+} from '../services/mien-trung-regional-daily-hot8.service';
+import { saveMienTrungRegionalDailyHot8Snapshot } from '../services/mien-trung-regional-daily-hot8-snapshot.service';
 
 interface ProvincePrediction {
   province: string;
@@ -73,8 +78,24 @@ async function main(): Promise<void> {
       }
       results.push({ province, rows, daSo, specialLast3 });
     }
+    let regionalHot8: MienTrungRegionalDailyHot8Prediction | undefined;
+    try {
+      regionalHot8 = await predictMienTrungRegionalDailyHot8({ targetDate, provinces, historyDays, top: 5 }) ?? undefined;
+      if (regionalHot8) {
+        await saveMienTrungRegionalDailyHot8Snapshot(predictionDate, regionalHot8);
+        console.log(`Mien Trung regional daily Hot-8 - Experimental (${targetDate})`);
+        console.table(regionalHot8.rows);
+      } else {
+        logger.warn('No Mien Trung regional daily Hot-8 history found', { targetDate, provinces });
+      }
+    } catch (error) {
+      logger.warn('Mien Trung regional daily Hot-8 failed; continuing existing prediction flow', {
+        targetDate,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     logger.info('Mien Trung scheduled prediction completed', { predictionDate, targetDate, provinces, top });
-    await sendPredictionEmail(predictionDate, targetDate, historyDays, results);
+    await sendPredictionEmail(predictionDate, targetDate, historyDays, results, regionalHot8);
   } finally {
     await disconnectDatabase();
   }
@@ -85,6 +106,7 @@ async function sendPredictionEmail(
   targetDate: string,
   historyDays: number,
   results: ProvincePrediction[],
+  regionalHot8?: MienTrungRegionalDailyHot8Prediction,
 ): Promise<void> {
   if (results.length === 0) {
     logger.warn('No Mien Trung prediction rows available. Skipping email.', { targetDate });
@@ -97,8 +119,8 @@ async function sendPredictionEmail(
   }
   await sendEmail({
     subject: `[LotoAI][DaSo v3] Mien Trung prediction ${targetDate}: ${results.map((result) => provinceName(result.province)).join(', ')}`,
-    text: buildEmailText(predictionDate, targetDate, historyDays, results),
-    html: buildEmailHtml(predictionDate, targetDate, historyDays, results),
+    text: buildEmailText(predictionDate, targetDate, historyDays, results, regionalHot8),
+    html: buildEmailHtml(predictionDate, targetDate, historyDays, results, regionalHot8),
   });
   logger.info('Mien Trung prediction email sent successfully.', {
     predictionDate,
@@ -112,6 +134,7 @@ function buildEmailText(
   targetDate: string,
   historyDays: number,
   results: ProvincePrediction[],
+  regionalHot8?: MienTrungRegionalDailyHot8Prediction,
 ): string {
   return [
     'Mien Trung scheduled prediction',
@@ -119,6 +142,16 @@ function buildEmailText(
     `Target date: ${targetDate}`,
     `History days: ${historyDays}`,
     'Ranking scores are reference values, not guaranteed probabilities.',
+    ...(regionalHot8 ? [
+      '',
+      'Mien Trung Regional Daily Hot-8 - Experimental Reference Only',
+      `Model version: ${regionalHot8.modelVersion}`,
+      `Provinces: ${regionalHot8.provinces.map(provinceName).join(', ')}`,
+      `History: ${regionalHot8.historyDraws} same-weekday regional draws`,
+      `Previous same-weekday draw: ${regionalHot8.previousDrawDate ?? '-'}`,
+      `Formula: ${regionalHot8.formula}`,
+      ...regionalHot8.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | appearances=${row.appearances}/${regionalHot8.historyDraws} (${row.appearanceRate}) | appearedPreviousDraw=${row.appearedPreviousDraw ? 'yes' : 'no'}`),
+    ] : []),
     ...results.flatMap((result) => [
       '',
       provinceName(result.province),
@@ -152,6 +185,7 @@ function buildEmailHtml(
   targetDate: string,
   historyDays: number,
   results: ProvincePrediction[],
+  regionalHot8?: MienTrungRegionalDailyHot8Prediction,
 ): string {
   const sections = results.map((result) => {
     const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.drawsSinceLastSeen}</td><td>${escapeHtml(row.provinceRankScore)}</td><td>${escapeHtml(row.regionalRankScore)}</td><td>${escapeHtml(row.provinceWeight)}</td><td>${row.provinceDraws}/${row.regionalDraws}</td></tr>`).join('');
@@ -171,9 +205,13 @@ function buildEmailHtml(
       ${daSoSection}
       ${specialLast3Section}`;
   }).join('');
+  const regionalHot8Section = regionalHot8 ? `<h2>Mien Trung Regional Daily Hot-8 - Experimental Reference Only</h2>
+    <p><strong>Model version:</strong> ${escapeHtml(regionalHot8.modelVersion)}<br><strong>Provinces:</strong> ${regionalHot8.provinces.map((province) => escapeHtml(provinceName(province))).join(', ')}<br><strong>History:</strong> ${regionalHot8.historyDraws} same-weekday regional draws<br><strong>Previous same-weekday draw:</strong> ${escapeHtml(regionalHot8.previousDrawDate ?? '-')}<br><strong>Formula:</strong> ${escapeHtml(regionalHot8.formula)}</p>
+    <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Appearances</th><th>Rate</th><th>Appeared previous draw</th></tr></thead><tbody>${regionalHot8.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.appearances}/${regionalHot8.historyDraws}</td><td>${escapeHtml(row.appearanceRate)}</td><td>${row.appearedPreviousDraw ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table>
+    <p>Experimental reference only. This section does not change province predictions.</p>` : '';
   return `<h1>Mien Trung scheduled prediction</h1>
     <p><strong>Prediction date:</strong> ${escapeHtml(predictionDate)}<br><strong>Target date:</strong> ${escapeHtml(targetDate)}<br><strong>History days:</strong> ${historyDays}</p>
-    <p>Ranking scores are reference values, not guaranteed probabilities.</p>${sections}`;
+    <p>Ranking scores are reference values, not guaranteed probabilities.</p>${regionalHot8Section}${sections}`;
 }
 
 function provinceName(province: string): string {
