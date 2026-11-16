@@ -12,6 +12,10 @@ export const MIEN_TRUNG_LAST2_MODEL_VERSION = 'mien-trung-last2-hierarchical-v2'
 export const MIEN_TRUNG_PROVINCE_PRIOR_STRENGTH = 52;
 export const MIEN_TRUNG_HIERARCHICAL_FORMULA =
   'score = provinceWeight*provinceRankScore + (1-provinceWeight)*regionalRankScore; provinceWeight = provinceDraws/(provinceDraws+52)';
+export const MIEN_TRUNG_MULTI_HIT_AVERAGE_SCORE_THRESHOLD = 0.918305;
+export const MIEN_TRUNG_MULTI_HIT_MINIMUM_SCORE_THRESHOLD = 0.880383;
+export const MIEN_TRUNG_MULTI_HIT_AVERAGE_ABSENCE_THRESHOLD = 2.2;
+export const MIEN_TRUNG_MULTI_HIT_TOP1_TOP2_GAP_THRESHOLD = 0.023801;
 
 // Mien Trung owns these weights. Weekday is zero because a province normally
 // draws on a fixed weekday, so province and weekday encode the same information.
@@ -34,6 +38,19 @@ export interface MienTrungHierarchicalPredictionRow extends MienBacPredictionRow
   drawsSinceLastSeen: number;
   provinceDraws: number;
   regionalDraws: number;
+}
+
+export interface MienTrungProvinceMultiHitSignal {
+  level: 'STRONG' | 'FAIR' | 'NORMAL';
+  filterStatus: 'QUALIFIES' | 'WATCH' | 'SKIP';
+  conditionsPassed: number;
+  averageScore: string;
+  minimumScore: string;
+  averageDrawsSinceLastSeen: string;
+  top1Top2Gap: string;
+  referenceHitAtLeast2Rate: string;
+  referenceSampleSize: number;
+  conclusion: string;
 }
 
 interface HistoryRow {
@@ -154,6 +171,40 @@ export function buildProvinceDraws(rows: HistoryRow[]): MienTrungHistoryDraw[] {
     left.date.localeCompare(right.date) || left.province.localeCompare(right.province));
 }
 
+export function buildMienTrungProvinceMultiHitSignal(
+  rows: MienTrungHierarchicalPredictionRow[],
+): MienTrungProvinceMultiHitSignal {
+  const ranked = [...rows].sort((left, right) => left.rank - right.rank);
+  const scores = ranked.map((row) => Number(row.score));
+  const averageScore = average(scores);
+  const minimumScore = scores.length > 0 ? Math.min(...scores) : 0;
+  const averageDrawsSinceLastSeen = average(ranked.map((row) => row.drawsSinceLastSeen));
+  const top1Top2Gap = scores.length >= 2 ? scores[0] - scores[1] : 0;
+  const conditionsPassed = [
+    averageScore > MIEN_TRUNG_MULTI_HIT_AVERAGE_SCORE_THRESHOLD,
+    minimumScore > MIEN_TRUNG_MULTI_HIT_MINIMUM_SCORE_THRESHOLD,
+    averageDrawsSinceLastSeen > MIEN_TRUNG_MULTI_HIT_AVERAGE_ABSENCE_THRESHOLD,
+    top1Top2Gap > MIEN_TRUNG_MULTI_HIT_TOP1_TOP2_GAP_THRESHOLD,
+  ].filter(Boolean).length;
+  const level: MienTrungProvinceMultiHitSignal['level'] = conditionsPassed >= 3
+    ? 'STRONG' : conditionsPassed === 2 ? 'FAIR' : 'NORMAL';
+  const filterStatus: MienTrungProvinceMultiHitSignal['filterStatus'] = level === 'STRONG'
+    ? 'QUALIFIES' : level === 'FAIR' ? 'WATCH' : 'SKIP';
+  const reference = level === 'STRONG'
+    ? { rate: '36.84%', sample: 19 }
+    : level === 'FAIR'
+      ? { rate: '22.97%', sample: 74 }
+      : { rate: '13.84%', sample: 159 };
+  const conclusion = level === 'STRONG'
+    ? 'Strong experimental >=2 signal for this province; reference sample is small.'
+    : level === 'FAIR'
+      ? 'Fair experimental >=2 signal for this province; watch rather than qualify.'
+      : 'No strong >=2 indication for this province.';
+  return { level, filterStatus, conditionsPassed, averageScore: format(averageScore), minimumScore: format(minimumScore),
+    averageDrawsSinceLastSeen: averageDrawsSinceLastSeen.toFixed(2), top1Top2Gap: format(top1Top2Gap),
+    referenceHitAtLeast2Rate: reference.rate, referenceSampleSize: reference.sample, conclusion };
+}
+
 function groupRegionalDraws(draws: MienTrungHistoryDraw[]): DailyHits[] {
   const grouped = new Map<string, Set<string>>();
   for (const draw of draws) {
@@ -183,4 +234,8 @@ function shiftDate(date: string, days: number): string {
 
 function format(value: number): string {
   return value.toFixed(6);
+}
+
+function average(values: number[]): number {
+  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }

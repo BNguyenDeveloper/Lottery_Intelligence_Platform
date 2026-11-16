@@ -1,5 +1,5 @@
 import { MienTrungPredictionSnapshotModel } from '../models/MienTrungPredictionSnapshot';
-import { MIEN_TRUNG_LAST2_MODEL_VERSION, MienTrungHierarchicalPredictionRow } from './mien-trung-prediction.service';
+import { MIEN_TRUNG_LAST2_MODEL_VERSION, MienTrungHierarchicalPredictionRow, buildMienTrungProvinceMultiHitSignal } from './mien-trung-prediction.service';
 
 export async function saveMienTrungPredictionSnapshot(input: {
   predictionDate: string;
@@ -20,6 +20,7 @@ export async function saveMienTrungPredictionSnapshot(input: {
         ...identity,
         predictionDate: input.predictionDate,
         region: 'mien-trung',
+        multiHitSignal: buildMienTrungProvinceMultiHitSignal(input.rows),
         rows: input.rows.map(({ rank, number, score, repeatPenalty, frequencyScore, recentScore, trendScore,
           recencyScore, gapScore, weekdayScore, markovScore, soiCauScore, reverseScore, cycleScore, digitScore,
           bridgeScore, provinceRankScore, regionalRankScore, provinceWeight, drawsSinceLastSeen, provinceDraws, regionalDraws }) => ({ rank, number, score, repeatPenalty, frequencyScore, recentScore, trendScore,

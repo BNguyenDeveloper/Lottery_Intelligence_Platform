@@ -33,6 +33,18 @@ interface MienTrungPredictionSnapshotShape {
   target: 'last2';
   rows: MienTrungPredictionSnapshotRow[];
   modelVersion: string;
+  multiHitSignal?: {
+    level: 'STRONG' | 'FAIR' | 'NORMAL';
+    filterStatus: 'QUALIFIES' | 'WATCH' | 'SKIP';
+    conditionsPassed: number;
+    averageScore: string;
+    minimumScore: string;
+    averageDrawsSinceLastSeen: string;
+    top1Top2Gap: string;
+    referenceHitAtLeast2Rate: string;
+    referenceSampleSize: number;
+    conclusion: string;
+  };
 }
 
 const rowSchema = new Schema<MienTrungPredictionSnapshotRow>(
@@ -63,6 +75,19 @@ const rowSchema = new Schema<MienTrungPredictionSnapshotRow>(
   { _id: false },
 );
 
+const multiHitSignalSchema = new Schema({
+  level: { type: String, required: true, enum: ['STRONG', 'FAIR', 'NORMAL'] },
+  filterStatus: { type: String, required: true, enum: ['QUALIFIES', 'WATCH', 'SKIP'] },
+  conditionsPassed: { type: Number, required: true },
+  averageScore: { type: String, required: true },
+  minimumScore: { type: String, required: true },
+  averageDrawsSinceLastSeen: { type: String, required: true },
+  top1Top2Gap: { type: String, required: true },
+  referenceHitAtLeast2Rate: { type: String, required: true },
+  referenceSampleSize: { type: Number, required: true },
+  conclusion: { type: String, required: true },
+}, { _id: false });
+
 const schema = new Schema<MienTrungPredictionSnapshotShape>(
   {
     predictionDate: { type: String, required: true },
@@ -72,6 +97,7 @@ const schema = new Schema<MienTrungPredictionSnapshotShape>(
     target: { type: String, required: true, enum: ['last2'] },
     rows: { type: [rowSchema], required: true, default: [] },
     modelVersion: { type: String, required: true },
+    multiHitSignal: { type: multiHitSignalSchema, required: false },
   },
   { timestamps: true },
 );

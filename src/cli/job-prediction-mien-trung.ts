@@ -5,6 +5,12 @@ import { getEmailConfigStatus, sendEmail } from '../services/email.service';
 import {
   MIEN_TRUNG_HIERARCHICAL_FORMULA,
   MIEN_TRUNG_LAST2_MODEL_VERSION,
+  MIEN_TRUNG_MULTI_HIT_AVERAGE_ABSENCE_THRESHOLD,
+  MIEN_TRUNG_MULTI_HIT_AVERAGE_SCORE_THRESHOLD,
+  MIEN_TRUNG_MULTI_HIT_MINIMUM_SCORE_THRESHOLD,
+  MIEN_TRUNG_MULTI_HIT_TOP1_TOP2_GAP_THRESHOLD,
+  MienTrungProvinceMultiHitSignal,
+  buildMienTrungProvinceMultiHitSignal,
   predictMienTrungProvinceLast2,
 } from '../services/mien-trung-prediction.service';
 import { saveMienTrungPredictionSnapshot } from '../services/mien-trung-prediction-snapshot.service';
@@ -27,6 +33,7 @@ import { saveMienTrungRegionalDailyHot8Snapshot } from '../services/mien-trung-r
 interface ProvincePrediction {
   province: string;
   rows: Awaited<ReturnType<typeof predictMienTrungProvinceLast2>>;
+  multiHitSignal: MienTrungProvinceMultiHitSignal;
   daSo?: MienBacDaSoPrediction;
   specialLast3?: MienTrungSpecialLast3Prediction;
 }
@@ -56,8 +63,11 @@ async function main(): Promise<void> {
         continue;
       }
       await saveMienTrungPredictionSnapshot({ predictionDate, targetDate, province, rows });
+      const multiHitSignal = buildMienTrungProvinceMultiHitSignal(rows);
       console.log(`Mien Trung prediction: ${province} (${targetDate})`);
       console.table(rows);
+      console.log(`Mien Trung province multi-hit signal >=2: ${province}`);
+      console.table([multiHitSignal]);
       const daSo = await getMienTrungDaSoPrediction({
         province, targetDate, historyDays, numberTop: 5, candidatePool: 20, pairTop: 10,
       });
@@ -76,7 +86,7 @@ async function main(): Promise<void> {
       } else {
         logger.warn('No Mien Trung special-last3 prediction history found', { province, targetDate });
       }
-      results.push({ province, rows, daSo, specialLast3 });
+      results.push({ province, rows, multiHitSignal, daSo, specialLast3 });
     }
     let regionalHot8: MienTrungRegionalDailyHot8Prediction | undefined;
     try {
@@ -159,6 +169,18 @@ function buildEmailText(
       `Model version: ${MIEN_TRUNG_LAST2_MODEL_VERSION}`,
       `Formula: ${MIEN_TRUNG_HIERARCHICAL_FORMULA}`,
       ...result.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | drawsSinceLastSeen=${row.drawsSinceLastSeen} | provinceRank=${row.provinceRankScore} | regionalRank=${row.regionalRankScore} | provinceWeight=${row.provinceWeight} | samples=${row.provinceDraws}/${row.regionalDraws}`),
+      '',
+      'Province Multi-hit Signal >=2 - Experimental Reference Only',
+      `Signal level: ${result.multiHitSignal.level}`,
+      `Filter status: ${result.multiHitSignal.filterStatus}`,
+      `Conditions passed: ${result.multiHitSignal.conditionsPassed}/4`,
+      `Average score: ${result.multiHitSignal.averageScore} (threshold > ${MIEN_TRUNG_MULTI_HIT_AVERAGE_SCORE_THRESHOLD})`,
+      `Minimum score: ${result.multiHitSignal.minimumScore} (threshold > ${MIEN_TRUNG_MULTI_HIT_MINIMUM_SCORE_THRESHOLD})`,
+      `Average draws since last seen: ${result.multiHitSignal.averageDrawsSinceLastSeen} (threshold > ${MIEN_TRUNG_MULTI_HIT_AVERAGE_ABSENCE_THRESHOLD})`,
+      `Top1 - Top2 gap: ${result.multiHitSignal.top1Top2Gap} (threshold > ${MIEN_TRUNG_MULTI_HIT_TOP1_TOP2_GAP_THRESHOLD})`,
+      `Historical reference >=2: ${result.multiHitSignal.referenceHitAtLeast2Rate} (n=${result.multiHitSignal.referenceSampleSize})`,
+      result.multiHitSignal.conclusion,
+      'This per-province signal is experimental and does not guarantee >=2 hits.',
       ...(result.daSo ? [
         '',
         'Da So - Reference Only',
@@ -189,6 +211,17 @@ function buildEmailHtml(
 ): string {
   const sections = results.map((result) => {
     const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.drawsSinceLastSeen}</td><td>${escapeHtml(row.provinceRankScore)}</td><td>${escapeHtml(row.regionalRankScore)}</td><td>${escapeHtml(row.provinceWeight)}</td><td>${row.provinceDraws}/${row.regionalDraws}</td></tr>`).join('');
+    const multiHitSignalSection = `<h3>Province Multi-hit Signal &gt;=2 - Experimental Reference Only</h3>
+      <p><strong>Signal level:</strong> ${escapeHtml(result.multiHitSignal.level)}<br>
+      <strong>Filter status:</strong> ${escapeHtml(result.multiHitSignal.filterStatus)}<br>
+      <strong>Conditions passed:</strong> ${result.multiHitSignal.conditionsPassed}/4<br>
+      <strong>Average score:</strong> ${escapeHtml(result.multiHitSignal.averageScore)} (threshold &gt; ${MIEN_TRUNG_MULTI_HIT_AVERAGE_SCORE_THRESHOLD})<br>
+      <strong>Minimum score:</strong> ${escapeHtml(result.multiHitSignal.minimumScore)} (threshold &gt; ${MIEN_TRUNG_MULTI_HIT_MINIMUM_SCORE_THRESHOLD})<br>
+      <strong>Average draws since last seen:</strong> ${escapeHtml(result.multiHitSignal.averageDrawsSinceLastSeen)} (threshold &gt; ${MIEN_TRUNG_MULTI_HIT_AVERAGE_ABSENCE_THRESHOLD})<br>
+      <strong>Top1 - Top2 gap:</strong> ${escapeHtml(result.multiHitSignal.top1Top2Gap)} (threshold &gt; ${MIEN_TRUNG_MULTI_HIT_TOP1_TOP2_GAP_THRESHOLD})<br>
+      <strong>Historical reference &gt;=2:</strong> ${escapeHtml(result.multiHitSignal.referenceHitAtLeast2Rate)} (n=${result.multiHitSignal.referenceSampleSize})<br>
+      ${escapeHtml(result.multiHitSignal.conclusion)}<br>
+      This per-province signal is experimental and does not guarantee &gt;=2 hits.</p>`;
     const daSoSection = result.daSo ? `<h3>Da So - Reference Only</h3>
       <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_DA_SO_MODEL_VERSION)}</p>
       <p><strong>Selected numbers:</strong> ${result.daSo.numbers.map((row) => escapeHtml(row.number)).join(', ')}</p>
@@ -202,6 +235,7 @@ function buildEmailHtml(
       <h3>Prediction - Top 5</h3>
       <p><strong>Model version:</strong> ${escapeHtml(MIEN_TRUNG_LAST2_MODEL_VERSION)}<br><strong>Formula:</strong> ${escapeHtml(MIEN_TRUNG_HIERARCHICAL_FORMULA)}</p>
       <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Draws since last seen</th><th>Province rank</th><th>Regional rank</th><th>Province weight</th><th>Samples P/R</th></tr></thead><tbody>${predictionRows}</tbody></table>
+      ${multiHitSignalSection}
       ${daSoSection}
       ${specialLast3Section}`;
   }).join('');
