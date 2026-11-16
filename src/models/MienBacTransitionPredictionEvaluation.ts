@@ -10,6 +10,11 @@ export interface MienBacTransitionPredictionEvaluationShape {
   hitNumbers: string[];
   missNumbers: string[];
   hitDay: boolean;
+  hitAtLeast2?: boolean;
+  signalLevel?: 'STRONG' | 'FAIR' | 'NORMAL';
+  filterStatus?: 'QUALIFIES' | 'WATCH' | 'SKIP';
+  conditionsPassed?: number;
+  filterOutcome?: 'HIT_AT_LEAST_2' | 'MISS_UNDER_2' | 'NOT_QUALIFIED';
   randomBaselineHits: string;
   liftVsBase: string;
   liftVsRandom: string;
@@ -27,6 +32,11 @@ const schema = new Schema<MienBacTransitionPredictionEvaluationShape>({
   hitNumbers: { type: [String], required: true, default: [] },
   missNumbers: { type: [String], required: true, default: [] },
   hitDay: { type: Boolean, required: true },
+  hitAtLeast2: { type: Boolean, required: false },
+  signalLevel: { type: String, required: false, enum: ['STRONG', 'FAIR', 'NORMAL'] },
+  filterStatus: { type: String, required: false, enum: ['QUALIFIES', 'WATCH', 'SKIP'] },
+  conditionsPassed: { type: Number, required: false },
+  filterOutcome: { type: String, required: false, enum: ['HIT_AT_LEAST_2', 'MISS_UNDER_2', 'NOT_QUALIFIED'] },
   randomBaselineHits: { type: String, required: true },
   liftVsBase: { type: String, required: true },
   liftVsRandom: { type: String, required: true },

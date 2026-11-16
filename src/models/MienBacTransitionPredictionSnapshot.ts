@@ -29,6 +29,16 @@ interface MienBacTransitionPredictionSnapshotShape {
     lambda: number;
   };
   rows: MienBacTransitionSnapshotRow[];
+  multiHitSignal?: {
+    level: 'STRONG' | 'FAIR' | 'NORMAL';
+    filterStatus: 'QUALIFIES' | 'WATCH' | 'SKIP';
+    conditionsPassed: number;
+    top1Top5Spread: string;
+    top1Top2Gap: string;
+    averageTransitionZ: string;
+    transitionContribution: 'Enabled' | 'Disabled (lambda=0)';
+    conclusion: string;
+  };
 }
 
 const rowSchema = new Schema<MienBacTransitionSnapshotRow>({
@@ -42,6 +52,17 @@ const rowSchema = new Schema<MienBacTransitionSnapshotRow>({
   supportingEdges: { type: Number, required: true },
   drawsSinceLastSeen: { type: Number, required: true },
   historyDraws: { type: Number, required: true },
+}, { _id: false });
+
+const multiHitSignalSchema = new Schema({
+  level: { type: String, required: true, enum: ['STRONG', 'FAIR', 'NORMAL'] },
+  filterStatus: { type: String, required: true, enum: ['QUALIFIES', 'WATCH', 'SKIP'] },
+  conditionsPassed: { type: Number, required: true },
+  top1Top5Spread: { type: String, required: true },
+  top1Top2Gap: { type: String, required: true },
+  averageTransitionZ: { type: String, required: true },
+  transitionContribution: { type: String, required: true, enum: ['Enabled', 'Disabled (lambda=0)'] },
+  conclusion: { type: String, required: true },
 }, { _id: false });
 
 const schema = new Schema<MienBacTransitionPredictionSnapshotShape>({
@@ -60,6 +81,7 @@ const schema = new Schema<MienBacTransitionPredictionSnapshotShape>({
     lambda: { type: Number, required: true },
   },
   rows: { type: [rowSchema], required: true, default: [] },
+  multiHitSignal: { type: multiHitSignalSchema, required: false },
 }, { timestamps: true });
 
 schema.index({ targetDate: 1, modelVersion: 1 }, { unique: true });

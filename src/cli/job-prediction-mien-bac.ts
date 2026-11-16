@@ -18,6 +18,10 @@ import {
   MIEN_BAC_TRANSITION_MODEL_VERSION,
   MienBacTransitionPredictionRow,
   MienBacTransitionConfig,
+  TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD,
+  TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD,
+  TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD,
+  buildMienBacTransitionMultiHitSignal,
   predictMienBacTransitionMatrix,
 } from '../services/mien-bac-transition-matrix.service';
 import { saveMienBacTransitionSnapshot } from '../services/mien-bac-transition-snapshot.service';
@@ -174,9 +178,13 @@ async function main(): Promise<void> {
   }
   if (transitionRows.length > 0) {
     await saveTransitionSnapshot(predictionDate, targetDate, transitionRows, transitionConfig);
+    const multiHitSignal = buildMienBacTransitionMultiHitSignal(transitionRows, transitionConfig);
     console.log('Prediction + Transition Matrix - Experimental Reference Only');
     console.table(transitionRows);
     console.log(`Formula: ${MIEN_BAC_TRANSITION_FORMULA}`);
+    console.log('Transition Multi-hit Signal >=2 - Experimental Reference Only');
+    console.table([multiHitSignal]);
+    console.log(multiHitSignal.conclusion);
   }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
@@ -300,6 +308,9 @@ function buildPredictionEmailText(
   transitionRows: MienBacTransitionPredictionRow[],
   transitionConfig: MienBacTransitionConfig,
 ): string {
+  const transitionMultiHitSignal = transitionRows.length > 0
+    ? buildMienBacTransitionMultiHitSignal(transitionRows, transitionConfig)
+    : undefined;
   const header = [
     summary,
     `Prediction date: ${predictionDate}`,
@@ -400,6 +411,17 @@ function buildPredictionEmailText(
         `Config: alpha=${transitionConfig.priorStrength} | topEdges=${transitionConfig.topEdges} | lags=${transitionConfig.lags.join(',')} | lagWeights=${transitionConfig.lagWeights.join(',')} | lambda=${transitionConfig.lambda}`,
         'This isolated section does not affect Prediction, Blend, evaluation, or learning.',
         ...transitionRows.map((row) => `#${row.rank} | number=${row.number} | drawsSinceLastSeen=${row.drawsSinceLastSeen} | final=${row.finalScore} | base=${row.baseScore} | baseZ=${row.baseZScore} | transitionResidual=${row.transitionResidual} | transitionZ=${row.transitionZScore} | supportingEdges=${row.supportingEdges} | historyDraws=${row.historyDraws}`),
+        '',
+        'Transition Multi-hit Signal >=2 - Experimental Reference Only',
+        `Signal level: ${transitionMultiHitSignal?.level}`,
+        `Filter status: ${transitionMultiHitSignal?.filterStatus}`,
+        `Conditions passed: ${transitionMultiHitSignal?.conditionsPassed}/3`,
+        `Top1 - Top5: ${transitionMultiHitSignal?.top1Top5Spread} (reference threshold > ${TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD})`,
+        `Top1 - Top2: ${transitionMultiHitSignal?.top1Top2Gap} (reference threshold > ${TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD})`,
+        `Average Transition Z: ${transitionMultiHitSignal?.averageTransitionZ} (reference threshold > ${TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD})`,
+        `Transition contribution: ${transitionMultiHitSignal?.transitionContribution}`,
+        transitionMultiHitSignal?.conclusion ?? '',
+        'This signal is exploratory and does not guarantee >=2 hits.',
       ]
     : [];
 
@@ -436,6 +458,9 @@ function buildPredictionEmailHtml(
   transitionRows: MienBacTransitionPredictionRow[],
   transitionConfig: MienBacTransitionConfig,
 ): string {
+  const transitionMultiHitSignal = transitionRows.length > 0
+    ? buildMienBacTransitionMultiHitSignal(transitionRows, transitionConfig)
+    : undefined;
   const tableRows = rows
     .map(
       (row) => `<tr>
@@ -622,7 +647,17 @@ function buildPredictionEmailHtml(
     <table border="1" cellpadding="6" cellspacing="0">
       <thead><tr><th>Rank</th><th>Number</th><th>Draws since last seen</th><th>Final</th><th>Base</th><th>Base Z</th><th>Transition residual</th><th>Transition Z</th><th>Supporting edges</th><th>History draws</th></tr></thead>
       <tbody>${transitionRows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${row.drawsSinceLastSeen}</td><td>${escapeHtml(row.finalScore)}</td><td>${escapeHtml(row.baseScore)}</td><td>${escapeHtml(row.baseZScore)}</td><td>${escapeHtml(row.transitionResidual)}</td><td>${escapeHtml(row.transitionZScore)}</td><td>${row.supportingEdges}</td><td>${row.historyDraws}</td></tr>`).join('')}</tbody>
-    </table>`
+    </table>
+    <h4>Transition Multi-hit Signal &gt;=2 - Experimental Reference Only</h4>
+    <p><strong>Signal level:</strong> ${escapeHtml(transitionMultiHitSignal?.level ?? 'NORMAL')}<br>
+    <strong>Filter status:</strong> ${escapeHtml(transitionMultiHitSignal?.filterStatus ?? 'SKIP')}<br>
+    <strong>Conditions passed:</strong> ${transitionMultiHitSignal?.conditionsPassed ?? 0}/3<br>
+    <strong>Top1 - Top5:</strong> ${escapeHtml(transitionMultiHitSignal?.top1Top5Spread ?? '0.000000')} (reference threshold &gt; ${TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD})<br>
+    <strong>Top1 - Top2:</strong> ${escapeHtml(transitionMultiHitSignal?.top1Top2Gap ?? '0.000000')} (reference threshold &gt; ${TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD})<br>
+    <strong>Average Transition Z:</strong> ${escapeHtml(transitionMultiHitSignal?.averageTransitionZ ?? '0.000000')} (reference threshold &gt; ${TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD})<br>
+    <strong>Transition contribution:</strong> ${escapeHtml(transitionMultiHitSignal?.transitionContribution ?? 'Disabled')}<br>
+    ${escapeHtml(transitionMultiHitSignal?.conclusion ?? '')}<br>
+    This signal is exploratory and does not guarantee &gt;=2 hits.</p>`
     : '';
 
   return `<!doctype html>

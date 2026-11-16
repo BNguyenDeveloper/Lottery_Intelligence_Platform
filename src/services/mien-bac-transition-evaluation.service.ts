@@ -2,7 +2,10 @@ import { LotteryNumberMienBacModel } from '../models/LotteryNumber';
 import { MienBacTransitionPredictionEvaluationModel } from '../models/MienBacTransitionPredictionEvaluation';
 import { MienBacTransitionPredictionSnapshotModel } from '../models/MienBacTransitionPredictionSnapshot';
 import { PredictionSnapshotModel } from '../models/PredictionSnapshot';
-import { MIEN_BAC_TRANSITION_MODEL_VERSION } from './mien-bac-transition-matrix.service';
+import {
+  MIEN_BAC_TRANSITION_MODEL_VERSION,
+  buildMienBacTransitionMultiHitSignal,
+} from './mien-bac-transition-matrix.service';
 import { MIEN_BAC_LAST2_PREDICTION_SNAPSHOT_VERSION } from './prediction-learning-weight.service';
 
 export async function evaluateMienBacTransitionPrediction(targetDate: string) {
@@ -30,6 +33,8 @@ export async function evaluateMienBacTransitionPrediction(targetDate: string) {
   const missNumbers = predicted.filter((number) => !actual.has(number));
   const baseHitCount = base.filter((number) => actual.has(number)).length;
   const randomBaseline = predicted.length * actual.size / 100;
+  const multiHitSignal = snapshot.multiHitSignal ?? buildMienBacTransitionMultiHitSignal(snapshot.rows, snapshot.config);
+  const hitAtLeast2 = hitNumbers.length >= 2;
   const result = {
     targetDate,
     modelVersion: MIEN_BAC_TRANSITION_MODEL_VERSION,
@@ -40,6 +45,13 @@ export async function evaluateMienBacTransitionPrediction(targetDate: string) {
     hitNumbers,
     missNumbers,
     hitDay: hitNumbers.length > 0,
+    hitAtLeast2,
+    signalLevel: multiHitSignal.level,
+    filterStatus: multiHitSignal.filterStatus,
+    conditionsPassed: multiHitSignal.conditionsPassed,
+    filterOutcome: multiHitSignal.filterStatus === 'QUALIFIES'
+      ? hitAtLeast2 ? 'HIT_AT_LEAST_2' as const : 'MISS_UNDER_2' as const
+      : 'NOT_QUALIFIED' as const,
     randomBaselineHits: randomBaseline.toFixed(3),
     liftVsBase: percent((hitNumbers.length - baseHitCount) / Math.max(baseHitCount, Number.EPSILON)),
     liftVsRandom: percent((hitNumbers.length - randomBaseline) / Math.max(randomBaseline, Number.EPSILON)),

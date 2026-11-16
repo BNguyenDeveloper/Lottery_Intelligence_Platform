@@ -4,6 +4,7 @@ import {
   MIEN_BAC_TRANSITION_MODEL_VERSION,
   MienBacTransitionConfig,
   MienBacTransitionPredictionRow,
+  buildMienBacTransitionMultiHitSignal,
 } from './mien-bac-transition-matrix.service';
 
 export async function saveMienBacTransitionSnapshot(input: {
@@ -24,6 +25,7 @@ export async function saveMienBacTransitionSnapshot(input: {
       formula: MIEN_BAC_TRANSITION_FORMULA,
       config: input.config,
       rows: input.rows,
+      multiHitSignal: buildMienBacTransitionMultiHitSignal(input.rows, input.config),
     } },
     { upsert: true },
   ).exec();

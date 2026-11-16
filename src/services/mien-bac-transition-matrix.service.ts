@@ -5,6 +5,9 @@ import { getLatestPredictionLearningWeights } from './prediction-learning-weight
 export const MIEN_BAC_TRANSITION_MODEL_VERSION = 'mien-bac-last2-transition-residual-v2-experimental';
 export const MIEN_BAC_TRANSITION_FORMULA =
   'finalScore = z(baseScore) + lambda*z(reliabilityWeightedLogOddsResidual); lambda may be 0';
+export const TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD = 0.94;
+export const TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD = 0.47;
+export const TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD = 0.33;
 
 export interface MienBacTransitionConfig {
   priorStrength: number;
@@ -35,6 +38,17 @@ export interface MienBacTransitionPredictionRow {
   supportingEdges: number;
   drawsSinceLastSeen: number;
   historyDraws: number;
+}
+
+export interface MienBacTransitionMultiHitSignal {
+  level: 'STRONG' | 'FAIR' | 'NORMAL';
+  filterStatus: 'QUALIFIES' | 'WATCH' | 'SKIP';
+  conditionsPassed: number;
+  top1Top5Spread: string;
+  top1Top2Gap: string;
+  averageTransitionZ: string;
+  transitionContribution: 'Enabled' | 'Disabled (lambda=0)';
+  conclusion: string;
 }
 
 interface TransitionSignal { residual: number; supportingEdges: number }
@@ -131,6 +145,54 @@ function buildTransitionSignals(dailyHits: DailyHits[], candidates: string[], co
 
 export function buildMienBacDailyHits(rows: HistoryRow[]): DailyHits[] { return buildDailyHits(rows); }
 export function resolveMienBacTransitionConfig(config?: Partial<MienBacTransitionConfig>): MienBacTransitionConfig { return resolveConfig(config); }
+
+export function buildMienBacTransitionMultiHitSignal(
+  rows: MienBacTransitionPredictionRow[],
+  config: MienBacTransitionConfig,
+): MienBacTransitionMultiHitSignal {
+  const ranked = [...rows].sort((left, right) => left.rank - right.rank);
+  const finalScores = ranked.map((row) => Number(row.finalScore));
+  const transitionZScores = ranked.map((row) => Number(row.transitionZScore));
+  const top1Top5Spread = finalScores.length >= 5 ? finalScores[0] - finalScores[4] : 0;
+  const top1Top2Gap = finalScores.length >= 2 ? finalScores[0] - finalScores[1] : 0;
+  const averageTransitionZ = transitionZScores.length > 0
+    ? transitionZScores.reduce((sum, value) => sum + value, 0) / transitionZScores.length
+    : 0;
+  const conditionsPassed = [
+    top1Top5Spread > TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD,
+    top1Top2Gap > TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD,
+    averageTransitionZ > TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD,
+  ].filter(Boolean).length;
+  const transitionEnabled = config.lambda > 0;
+  const level: MienBacTransitionMultiHitSignal['level'] = transitionEnabled && conditionsPassed === 3
+    ? 'STRONG'
+    : transitionEnabled && conditionsPassed >= 2
+      ? 'FAIR'
+      : 'NORMAL';
+  const filterStatus: MienBacTransitionMultiHitSignal['filterStatus'] = level === 'STRONG'
+    ? 'QUALIFIES'
+    : level === 'FAIR'
+      ? 'WATCH'
+      : 'SKIP';
+  const conclusion = !transitionEnabled
+    ? 'No strong >=2 indication: transition contribution is disabled, so transition residual does not affect Final score.'
+    : level === 'STRONG'
+      ? 'Strong experimental >=2 signal: all score-separation and transition conditions passed.'
+      : level === 'FAIR'
+        ? 'Fair experimental >=2 signal: two reference conditions passed.'
+        : 'No strong >=2 indication: fewer than two reference conditions passed.';
+
+  return {
+    level,
+    filterStatus,
+    conditionsPassed,
+    top1Top5Spread: top1Top5Spread.toFixed(6),
+    top1Top2Gap: top1Top2Gap.toFixed(6),
+    averageTransitionZ: averageTransitionZ.toFixed(6),
+    transitionContribution: transitionEnabled ? 'Enabled' : 'Disabled (lambda=0)',
+    conclusion,
+  };
+}
 
 function resolveConfig(config?: Partial<MienBacTransitionConfig>): MienBacTransitionConfig {
   const resolved = { ...DEFAULT_MIEN_BAC_TRANSITION_CONFIG, ...config };
