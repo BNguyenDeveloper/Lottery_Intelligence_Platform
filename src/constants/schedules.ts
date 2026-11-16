@@ -11,7 +11,7 @@ const SCHEDULES: Partial<Record<RegionCode, Record<number, string[]>>> = {
     6: ['ho-chi-minh', 'long-an', 'binh-phuoc', 'hau-giang'],
   },
   'mien-trung': {
-    0: ['khanh-hoa', 'kon-tum'],
+    0: ['hue', 'khanh-hoa', 'kon-tum'],
     1: ['hue', 'phu-yen'],
     2: ['dak-lak', 'quang-nam'],
     3: ['da-nang', 'khanh-hoa'],
