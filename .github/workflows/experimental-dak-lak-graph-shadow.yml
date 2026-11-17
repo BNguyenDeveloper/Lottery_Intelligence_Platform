@@ -1,0 +1,47 @@
+name: Experimental Dak Lak Graph Shadow
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: Dak Lak target draw date (YYYY-MM-DD)
+        required: true
+        type: string
+      simulate:
+        description: Read-only historical simulation; do not save snapshot
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  dak-lak-graph-shadow:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      TARGET_DATE: ${{ inputs.target_date }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Validate target date
+        shell: bash
+        run: |
+          [[ "$TARGET_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "Invalid target_date: $TARGET_DATE"; exit 1; }
+          [[ "$(date -u -d "$TARGET_DATE" +%F)" == "$TARGET_DATE" ]] || { echo "Invalid calendar date: $TARGET_DATE"; exit 1; }
+      - name: Build and test isolated model
+        run: |
+          npm run build
+          npm run test:graph:dak-lak
+      - name: Run isolated graph shadow
+        shell: bash
+        run: |
+          args=(--target-date "$TARGET_DATE")
+          if [[ "${{ inputs.simulate }}" == "true" ]]; then args+=(--simulate); fi
+          npm run experiment:graph:dak-lak -- "${args[@]}"

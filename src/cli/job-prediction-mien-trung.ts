@@ -29,6 +29,17 @@ import {
   predictMienTrungRegionalDailyHot8,
 } from '../services/mien-trung-regional-daily-hot8.service';
 import { saveMienTrungRegionalDailyHot8Snapshot } from '../services/mien-trung-regional-daily-hot8-snapshot.service';
+import { LotteryNumberMienTrungModel } from '../models/LotteryNumber';
+import {
+  buildDakLakGraphDraws,
+  buildDakLakGraphSignal,
+  DAK_LAK_GRAPH_FORMULA,
+  DAK_LAK_GRAPH_HISTORY_DRAWS,
+  DAK_LAK_GRAPH_MODEL_VERSION,
+  DAK_LAK_GRAPH_STRONG_CONSENSUS,
+  DakLakGraphSignal,
+} from '../services/dak-lak-graph-experimental.service';
+import { evaluatePendingDakLakGraphSnapshots, saveDakLakGraphSnapshot } from '../services/dak-lak-graph-state.service';
 
 interface ProvincePrediction {
   province: string;
@@ -36,6 +47,11 @@ interface ProvincePrediction {
   multiHitSignal: MienTrungProvinceMultiHitSignal;
   daSo?: MienBacDaSoPrediction;
   specialLast3?: MienTrungSpecialLast3Prediction;
+}
+
+interface DakLakGraphEmailPrediction {
+  historyDraws: number;
+  signal: DakLakGraphSignal;
 }
 
 function option(name: string): string | undefined {
@@ -104,8 +120,37 @@ async function main(): Promise<void> {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    let dakLakGraph: DakLakGraphEmailPrediction | undefined;
+    if (provinces.includes('dak-lak')) {
+      try {
+        const rawRows = await LotteryNumberMienTrungModel.find({ province: 'dak-lak', date: { $lte: targetDate } })
+          .select({ _id: 0, date: 1, last2: 1 }).sort({ date: 1 })
+          .lean<Array<{ date: string; last2: string }>>().exec();
+        const graphDraws = buildDakLakGraphDraws(rawRows);
+        const historyDraws = graphDraws.filter((draw) => draw.date < targetDate).slice(-DAK_LAK_GRAPH_HISTORY_DRAWS).length;
+        if (historyDraws >= DAK_LAK_GRAPH_HISTORY_DRAWS) {
+          const signal = buildDakLakGraphSignal(graphDraws, targetDate);
+          await evaluatePendingDakLakGraphSnapshots(targetDate);
+          await saveDakLakGraphSnapshot({ predictionDate, targetDate, historyDraws,
+            rows: signal.longWindowRows, signal });
+          dakLakGraph = { historyDraws, signal };
+          console.log(`Dak Lak graph signal - Experimental (${targetDate})`);
+          console.table([{ signal: signal.level, consensus: `${signal.consensusCount}/5`,
+            consensusNumbers: signal.consensusNumbers.join(', '),
+            top13: signal.shortWindowRows.map((row) => row.number).join(', '),
+            top26: signal.longWindowRows.map((row) => row.number).join(', ') }]);
+        } else {
+          logger.warn('Insufficient Dak Lak graph history; continuing existing prediction flow', { targetDate, historyDraws });
+        }
+      } catch (error) {
+        logger.warn('Dak Lak graph signal failed; continuing existing prediction flow', {
+          targetDate,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     logger.info('Mien Trung scheduled prediction completed', { predictionDate, targetDate, provinces, top });
-    await sendPredictionEmail(predictionDate, targetDate, historyDays, results, regionalHot8);
+    await sendPredictionEmail(predictionDate, targetDate, historyDays, results, regionalHot8, dakLakGraph);
   } finally {
     await disconnectDatabase();
   }
@@ -117,6 +162,7 @@ async function sendPredictionEmail(
   historyDays: number,
   results: ProvincePrediction[],
   regionalHot8?: MienTrungRegionalDailyHot8Prediction,
+  dakLakGraph?: DakLakGraphEmailPrediction,
 ): Promise<void> {
   if (results.length === 0) {
     logger.warn('No Mien Trung prediction rows available. Skipping email.', { targetDate });
@@ -129,8 +175,8 @@ async function sendPredictionEmail(
   }
   await sendEmail({
     subject: `[LotoAI][DaSo v3] Mien Trung prediction ${targetDate}: ${results.map((result) => provinceName(result.province)).join(', ')}`,
-    text: buildEmailText(predictionDate, targetDate, historyDays, results, regionalHot8),
-    html: buildEmailHtml(predictionDate, targetDate, historyDays, results, regionalHot8),
+    text: buildEmailText(predictionDate, targetDate, historyDays, results, regionalHot8, dakLakGraph),
+    html: buildEmailHtml(predictionDate, targetDate, historyDays, results, regionalHot8, dakLakGraph),
   });
   logger.info('Mien Trung prediction email sent successfully.', {
     predictionDate,
@@ -145,6 +191,7 @@ function buildEmailText(
   historyDays: number,
   results: ProvincePrediction[],
   regionalHot8?: MienTrungRegionalDailyHot8Prediction,
+  dakLakGraph?: DakLakGraphEmailPrediction,
 ): string {
   return [
     'Mien Trung scheduled prediction',
@@ -161,6 +208,19 @@ function buildEmailText(
       `Previous same-weekday draw: ${regionalHot8.previousDrawDate ?? '-'}`,
       `Formula: ${regionalHot8.formula}`,
       ...regionalHot8.rows.map((row) => `#${row.rank} | number=${row.number} | score=${row.score} | appearances=${row.appearances}/${regionalHot8.historyDraws} (${row.appearanceRate}) | appearedPreviousDraw=${row.appearedPreviousDraw ? 'yes' : 'no'}`),
+    ] : []),
+    ...(dakLakGraph ? [
+      '',
+      'Dak Lak Graph Consensus - Experimental Reference Only',
+      `Model version: ${DAK_LAK_GRAPH_MODEL_VERSION}`,
+      `Signal: ${dakLakGraph.signal.level}`,
+      `Consensus: ${dakLakGraph.signal.consensusCount}/5 (STRONG threshold >= ${DAK_LAK_GRAPH_STRONG_CONSENSUS})`,
+      `Consensus numbers: ${dakLakGraph.signal.consensusNumbers.join(', ') || '-'}`,
+      `Top 5 / 13 draws: ${dakLakGraph.signal.shortWindowRows.map((row) => row.number).join(', ')}`,
+      `Top 5 / 26 draws: ${dakLakGraph.signal.longWindowRows.map((row) => row.number).join(', ')}`,
+      `Formula: ${DAK_LAK_GRAPH_FORMULA}`,
+      dakLakGraph.signal.conclusion,
+      'Shadow reference only. This section does not change existing province predictions.',
     ] : []),
     ...results.flatMap((result) => [
       '',
@@ -208,6 +268,7 @@ function buildEmailHtml(
   historyDays: number,
   results: ProvincePrediction[],
   regionalHot8?: MienTrungRegionalDailyHot8Prediction,
+  dakLakGraph?: DakLakGraphEmailPrediction,
 ): string {
   const sections = results.map((result) => {
     const predictionRows = result.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.drawsSinceLastSeen}</td><td>${escapeHtml(row.provinceRankScore)}</td><td>${escapeHtml(row.regionalRankScore)}</td><td>${escapeHtml(row.provinceWeight)}</td><td>${row.provinceDraws}/${row.regionalDraws}</td></tr>`).join('');
@@ -243,9 +304,19 @@ function buildEmailHtml(
     <p><strong>Model version:</strong> ${escapeHtml(regionalHot8.modelVersion)}<br><strong>Provinces:</strong> ${regionalHot8.provinces.map((province) => escapeHtml(provinceName(province))).join(', ')}<br><strong>History:</strong> ${regionalHot8.historyDraws} same-weekday regional draws<br><strong>Previous same-weekday draw:</strong> ${escapeHtml(regionalHot8.previousDrawDate ?? '-')}<br><strong>Formula:</strong> ${escapeHtml(regionalHot8.formula)}</p>
     <table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Rank</th><th>Number</th><th>Score</th><th>Appearances</th><th>Rate</th><th>Appeared previous draw</th></tr></thead><tbody>${regionalHot8.rows.map((row) => `<tr><td>${row.rank}</td><td><strong>${escapeHtml(row.number)}</strong></td><td>${escapeHtml(row.score)}</td><td>${row.appearances}/${regionalHot8.historyDraws}</td><td>${escapeHtml(row.appearanceRate)}</td><td>${row.appearedPreviousDraw ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table>
     <p>Experimental reference only. This section does not change province predictions.</p>` : '';
+  const dakLakGraphSection = dakLakGraph ? `<h2>Dak Lak Graph Consensus - Experimental Reference Only</h2>
+    <p><strong>Model version:</strong> ${escapeHtml(DAK_LAK_GRAPH_MODEL_VERSION)}<br>
+    <strong>Signal:</strong> ${escapeHtml(dakLakGraph.signal.level)}<br>
+    <strong>Consensus:</strong> ${dakLakGraph.signal.consensusCount}/5 (STRONG threshold &gt;= ${DAK_LAK_GRAPH_STRONG_CONSENSUS})<br>
+    <strong>Consensus numbers:</strong> ${escapeHtml(dakLakGraph.signal.consensusNumbers.join(', ') || '-')}<br>
+    <strong>Top 5 / 13 draws:</strong> ${escapeHtml(dakLakGraph.signal.shortWindowRows.map((row) => row.number).join(', '))}<br>
+    <strong>Top 5 / 26 draws:</strong> ${escapeHtml(dakLakGraph.signal.longWindowRows.map((row) => row.number).join(', '))}<br>
+    <strong>Formula:</strong> ${escapeHtml(DAK_LAK_GRAPH_FORMULA)}<br>
+    ${escapeHtml(dakLakGraph.signal.conclusion)}</p>
+    <p>Shadow reference only. This section does not change existing province predictions.</p>` : '';
   return `<h1>Mien Trung scheduled prediction</h1>
     <p><strong>Prediction date:</strong> ${escapeHtml(predictionDate)}<br><strong>Target date:</strong> ${escapeHtml(targetDate)}<br><strong>History days:</strong> ${historyDays}</p>
-    <p>Ranking scores are reference values, not guaranteed probabilities.</p>${regionalHot8Section}${sections}`;
+    <p>Ranking scores are reference values, not guaranteed probabilities.</p>${regionalHot8Section}${dakLakGraphSection}${sections}`;
 }
 
 function provinceName(province: string): string {

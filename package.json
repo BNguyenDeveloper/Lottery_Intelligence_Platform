@@ -19,6 +19,8 @@
     "backtest:da-so:mien-trung": "tsx src/cli/backtest-da-so-mien-trung.ts",
     "predict:special-last3:mien-trung": "tsx src/cli/predict-special-last3-mien-trung.ts",
     "backtest:special-last3:mien-trung": "tsx src/cli/backtest-special-last3-mien-trung.ts",
+    "experiment:graph:dak-lak": "tsx src/cli/experiment-graph-dak-lak.ts",
+    "test:graph:dak-lak": "tsx src/cli/test-graph-dak-lak.ts",
     "job:post-result:mien-bac": "tsx src/cli/job-post-result-mien-bac.ts",
     "learn:prediction:mien-bac": "tsx src/cli/update-prediction-learning-mien-bac.ts",
     "evaluate:prediction:mien-bac": "tsx src/cli/evaluate-prediction-mien-bac.ts",
