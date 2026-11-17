@@ -26,6 +26,7 @@
     "evaluate:prediction:mien-bac": "tsx src/cli/evaluate-prediction-mien-bac.ts",
     "backtest:prediction:mien-bac": "tsx src/cli/backtest-prediction-mien-bac.ts",
     "backtest:transition:mien-bac": "tsx src/cli/backtest-transition-matrix-mien-bac.ts",
+    "test:transition:play-filter:mien-bac": "tsx src/cli/test-transition-play-filter-mien-bac.ts",
     "predict:da-so:mien-bac": "tsx src/cli/predict-da-so-mien-bac.ts",
     "backtest:da-so:mien-bac": "tsx src/cli/backtest-da-so-mien-bac.ts",
     "evaluate:da-so:mien-bac": "tsx src/cli/evaluate-da-so-mien-bac.ts",

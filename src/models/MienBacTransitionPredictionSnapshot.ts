@@ -38,6 +38,13 @@ interface MienBacTransitionPredictionSnapshotShape {
     averageTransitionZ: string;
     transitionContribution: 'Enabled' | 'Disabled (lambda=0)';
     conclusion: string;
+    experimentalPlayFilter?: {
+      status: 'PLAY' | 'SKIP';
+      spreadPassed: boolean;
+      gapPassed: boolean;
+      transitionZNotOverheated: boolean;
+      conclusion: string;
+    };
   };
 }
 
@@ -63,6 +70,13 @@ const multiHitSignalSchema = new Schema({
   averageTransitionZ: { type: String, required: true },
   transitionContribution: { type: String, required: true, enum: ['Enabled', 'Disabled (lambda=0)'] },
   conclusion: { type: String, required: true },
+  experimentalPlayFilter: { type: new Schema({
+    status: { type: String, required: true, enum: ['PLAY', 'SKIP'] },
+    spreadPassed: { type: Boolean, required: true },
+    gapPassed: { type: Boolean, required: true },
+    transitionZNotOverheated: { type: Boolean, required: true },
+    conclusion: { type: String, required: true },
+  }, { _id: false }), required: false },
 }, { _id: false });
 
 const schema = new Schema<MienBacTransitionPredictionSnapshotShape>({

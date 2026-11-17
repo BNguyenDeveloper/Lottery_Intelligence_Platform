@@ -185,6 +185,8 @@ async function main(): Promise<void> {
     console.log('Transition Multi-hit Signal >=2 - Experimental Reference Only');
     console.table([multiHitSignal]);
     console.log(multiHitSignal.conclusion);
+    console.log('Transition PLAY Filter - Experimental Reference Only');
+    console.table([multiHitSignal.experimentalPlayFilter]);
   }
 
   const summary = `Mien Bac prediction completed. Best ${target} candidate: ${rows[0].number}`;
@@ -422,6 +424,14 @@ function buildPredictionEmailText(
         `Transition contribution: ${transitionMultiHitSignal?.transitionContribution}`,
         transitionMultiHitSignal?.conclusion ?? '',
         'This signal is exploratory and does not guarantee >=2 hits.',
+        '',
+        'Transition PLAY Filter - Experimental Reference Only',
+        `Play status: ${transitionMultiHitSignal?.experimentalPlayFilter.status ?? 'SKIP'}`,
+        `Top1 - Top5 passed: ${transitionMultiHitSignal?.experimentalPlayFilter.spreadPassed ? 'yes' : 'no'} (> ${TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD})`,
+        `Top1 - Top2 passed: ${transitionMultiHitSignal?.experimentalPlayFilter.gapPassed ? 'yes' : 'no'} (> ${TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD})`,
+        `Average Transition Z not overheated: ${transitionMultiHitSignal?.experimentalPlayFilter.transitionZNotOverheated ? 'yes' : 'no'} (<= ${TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD})`,
+        transitionMultiHitSignal?.experimentalPlayFilter.conclusion ?? '',
+        'PLAY/SKIP is an experimental historical filter and does not guarantee a winning draw.',
       ]
     : [];
 
@@ -657,7 +667,14 @@ function buildPredictionEmailHtml(
     <strong>Average Transition Z:</strong> ${escapeHtml(transitionMultiHitSignal?.averageTransitionZ ?? '0.000000')} (reference threshold &gt; ${TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD})<br>
     <strong>Transition contribution:</strong> ${escapeHtml(transitionMultiHitSignal?.transitionContribution ?? 'Disabled')}<br>
     ${escapeHtml(transitionMultiHitSignal?.conclusion ?? '')}<br>
-    This signal is exploratory and does not guarantee &gt;=2 hits.</p>`
+    This signal is exploratory and does not guarantee &gt;=2 hits.</p>
+    <h4>Transition PLAY Filter - Experimental Reference Only</h4>
+    <p><strong>Play status:</strong> ${escapeHtml(transitionMultiHitSignal?.experimentalPlayFilter.status ?? 'SKIP')}<br>
+    <strong>Top1 - Top5 passed:</strong> ${transitionMultiHitSignal?.experimentalPlayFilter.spreadPassed ? 'Yes' : 'No'} (threshold &gt; ${TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD})<br>
+    <strong>Top1 - Top2 passed:</strong> ${transitionMultiHitSignal?.experimentalPlayFilter.gapPassed ? 'Yes' : 'No'} (threshold &gt; ${TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD})<br>
+    <strong>Average Transition Z not overheated:</strong> ${transitionMultiHitSignal?.experimentalPlayFilter.transitionZNotOverheated ? 'Yes' : 'No'} (threshold &lt;= ${TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD})<br>
+    ${escapeHtml(transitionMultiHitSignal?.experimentalPlayFilter.conclusion ?? '')}<br>
+    PLAY/SKIP is an experimental historical filter and does not guarantee a winning draw.</p>`
     : '';
 
   return `<!doctype html>

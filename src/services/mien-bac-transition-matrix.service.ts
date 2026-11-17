@@ -49,6 +49,15 @@ export interface MienBacTransitionMultiHitSignal {
   averageTransitionZ: string;
   transitionContribution: 'Enabled' | 'Disabled (lambda=0)';
   conclusion: string;
+  experimentalPlayFilter: MienBacTransitionPlayFilter;
+}
+
+export interface MienBacTransitionPlayFilter {
+  status: 'PLAY' | 'SKIP';
+  spreadPassed: boolean;
+  gapPassed: boolean;
+  transitionZNotOverheated: boolean;
+  conclusion: string;
 }
 
 interface TransitionSignal { residual: number; supportingEdges: number }
@@ -181,6 +190,7 @@ export function buildMienBacTransitionMultiHitSignal(
       : level === 'FAIR'
         ? 'Fair experimental >=2 signal: two reference conditions passed.'
         : 'No strong >=2 indication: fewer than two reference conditions passed.';
+  const experimentalPlayFilter = buildMienBacTransitionPlayFilter(top1Top5Spread, top1Top2Gap, averageTransitionZ);
 
   return {
     level,
@@ -191,6 +201,27 @@ export function buildMienBacTransitionMultiHitSignal(
     averageTransitionZ: averageTransitionZ.toFixed(6),
     transitionContribution: transitionEnabled ? 'Enabled' : 'Disabled (lambda=0)',
     conclusion,
+    experimentalPlayFilter,
+  };
+}
+
+export function buildMienBacTransitionPlayFilter(
+  top1Top5Spread: number,
+  top1Top2Gap: number,
+  averageTransitionZ: number,
+): MienBacTransitionPlayFilter {
+  const spreadPassed = top1Top5Spread > TRANSITION_MULTI_HIT_TOP1_TOP5_THRESHOLD;
+  const gapPassed = top1Top2Gap > TRANSITION_MULTI_HIT_TOP1_TOP2_THRESHOLD;
+  const transitionZNotOverheated = averageTransitionZ <= TRANSITION_MULTI_HIT_AVERAGE_Z_THRESHOLD;
+  const status = spreadPassed && gapPassed && transitionZNotOverheated ? 'PLAY' : 'SKIP';
+  return {
+    status,
+    spreadPassed,
+    gapPassed,
+    transitionZNotOverheated,
+    conclusion: status === 'PLAY'
+      ? 'Experimental PLAY filter qualifies: both score-separation thresholds passed and Average Transition Z is not overheated.'
+      : 'Experimental PLAY filter does not qualify for this draw.',
   };
 }
 
