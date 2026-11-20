@@ -5,6 +5,8 @@ import { LotteryResultService } from '../services/lottery-result.service';
 import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 import { assertRegion, normalizeCode } from '../utils/validator';
+import { refreshMienTrungFrequencyMatrixSnapshotsAfterImport } from '../services/mien-trung-frequency-matrix-snapshot.service';
+import { LotteryResultInput } from '../interfaces/lottery-result.interface';
 
 function addDays(date: Date, days: number): Date {
   const next = new Date(date);
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
     normalizedRecords: 0,
     failures: 0,
   };
+  const importedResults: LotteryResultInput[] = [];
 
   await connectDatabase();
 
@@ -69,6 +72,7 @@ async function main(): Promise<void> {
       }
 
       const saved = await service.saveMany(results);
+      importedResults.push(...results);
       summary.fetchedRecords += results.length;
       summary.savedRecords += saved.savedRecords;
       summary.normalizedRecords += saved.normalizedRecords;
@@ -91,6 +95,8 @@ async function main(): Promise<void> {
       });
     }
   }
+
+  await refreshMienTrungFrequencyMatrixSnapshotsAfterImport(importedResults);
 
   logger.info('Regional import completed', summary);
 }

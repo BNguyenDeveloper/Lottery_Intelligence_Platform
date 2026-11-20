@@ -3,6 +3,7 @@ import { XsktCrawlerService } from '../services/crawler.service';
 import { LotteryResultService } from '../services/lottery-result.service';
 import { getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
+import { refreshMienTrungFrequencyMatrixSnapshotsAfterImport } from '../services/mien-trung-frequency-matrix-snapshot.service';
 
 export class DailyLotteryJob {
   constructor(
@@ -14,6 +15,7 @@ export class DailyLotteryJob {
     logger.info('Daily lottery job started', { date });
     const results = await this.crawler.fetchByDate(date);
     const summary = await this.service.saveMany(results);
+    await refreshMienTrungFrequencyMatrixSnapshotsAfterImport(results);
 
     logger.info('Daily lottery job completed', {
       date,

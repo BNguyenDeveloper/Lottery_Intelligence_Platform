@@ -4,6 +4,7 @@ import { LotteryResultService } from '../services/lottery-result.service';
 import { assertDateString, getVietnamDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 import { assertRegion, normalizeCode } from '../utils/validator';
+import { refreshMienTrungFrequencyMatrixSnapshotsAfterImport } from '../services/mien-trung-frequency-matrix-snapshot.service';
 
 async function main(): Promise<void> {
   const region = normalizeCode(process.argv[2] ?? '');
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
   }
 
   const summary = await new LotteryResultService().saveMany(results);
+  await refreshMienTrungFrequencyMatrixSnapshotsAfterImport(results);
   logger.info('Region job completed', { date, region, fetchedRecords: results.length, ...summary });
 }
 
