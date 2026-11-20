@@ -40,6 +40,7 @@
     "stats:last2": "tsx src/cli/stats-last2.ts",
     "stats:matrix:mien-trung": "tsx src/cli/stats-mien-trung-frequency-matrix.ts",
     "export:matrix:mien-trung:pages": "tsx src/cli/export-mien-trung-frequency-matrix-pages.ts",
+    "send:matrix:mien-trung:email": "tsx src/cli/send-mien-trung-matrix-link-email.ts",
     "stats:last3": "tsx src/cli/stats-last3.ts"
   },
   "keywords": [
